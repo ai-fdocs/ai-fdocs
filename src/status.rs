@@ -42,6 +42,7 @@ pub struct CrateStatus {
 
 #[derive(Debug, Deserialize)]
 struct MetaFile {
+    schema_version: Option<u32>,
     lock_version: Option<String>,
     version: Option<String>,
     is_fallback: Option<bool>,
@@ -115,6 +116,20 @@ pub fn collect_status(
                     reason: ".aifd-meta.toml has invalid TOML".to_string(),
                 };
             };
+
+            if let Some(schema_version) = meta.schema_version {
+                if schema_version > 1 {
+                    return CrateStatus {
+                        crate_name,
+                        lock_version: Some(lock_version.clone()),
+                        docs_version: Some(lock_version),
+                        status: DocsStatus::Corrupted,
+                        reason: format!(
+                            ".aifd-meta.toml schema version {schema_version} is newer than supported version 1"
+                        ),
+                    };
+                }
+            }
 
             let docs_version = meta
                 .version

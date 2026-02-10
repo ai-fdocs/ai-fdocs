@@ -262,8 +262,8 @@ with your project’s real dependency graph.
 - Provide ready-to-copy GitHub Actions recipes in docs.
 
 ### 3) Output and cache stability
-- Freeze metadata schema for `.aifd-meta.toml` before `1.0`.
-- Add explicit cache versioning/migrations to avoid breaking upgrades.
+- `.aifd-meta.toml` now carries an explicit schema version (`schema_version = 1`) as a stable baseline.
+- Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
 - Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
 
 ### 4) Release readiness (v1.0)

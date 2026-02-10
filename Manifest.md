@@ -184,7 +184,7 @@ JSON-контракт `status/check --format json`:
 - `status in {Synced,SyncedFallback,Outdated,Missing,Corrupted}`
 
 ### v0.3 (stability envelope)
-- Зафиксировать схему `.aifd-meta.toml` и добавить versioned cache/migration policy.
+- Для `.aifd-meta.toml` введена схема `schema_version = 1`; legacy-мета без версии мигрируется при чтении, а более новые неизвестные версии считаются несовместимыми.
 - Улучшить UX `_INDEX.md` для больших dependency graph (навигация, секции, подсказки для AI).
 - Уточнить и унифицировать сообщения CLI по всем подкомандам (`sync/status/check/init`).
 
