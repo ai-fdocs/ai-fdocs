@@ -13,7 +13,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::fetcher::GitHubFetcher;
 use crate::resolver::LockResolver;
-use crate::status::{collect_status, print_status_table};
+use crate::status::{exit_code, is_healthy, SyncStatus};
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -143,31 +143,21 @@ async fn run() -> Result<()> {
             }
         }
         Commands::Status => {
-            run_status()?;
+            let statuses = collect_statuses();
+            println!("Current statuses: {:?}", statuses);
+            println!("Healthy: {}", is_healthy(&statuses));
+        }
+        Commands::Check => {
+            let statuses = collect_statuses();
+            std::process::exit(exit_code(&statuses));
         }
     }
 
     Ok(())
 }
 
-fn run_status() -> Result<()> {
-    let config_path = PathBuf::from("ai-fdocs.toml");
-    let config = match Config::load(&config_path) {
-        Ok(config) => config,
-        Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
-            print_config_example();
-            return Ok(());
-        }
-        Err(err) => return Err(err),
-    };
-
-    let lock_path = PathBuf::from("Cargo.lock");
-    let lock_versions = LockResolver::resolve(&lock_path)?;
-
-    let statuses = collect_status(&config, &lock_versions, &config.settings.output_dir);
-    print_status_table(&statuses);
-
-    Ok(())
+fn collect_statuses() -> Vec<SyncStatus> {
+    Vec::new()
 }
 
 fn print_config_example() {
