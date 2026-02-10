@@ -9,7 +9,7 @@ mod resolver;
 mod status;
 mod storage;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::Semaphore;
@@ -128,7 +128,7 @@ async fn run(cli: Cli) -> Result<()> {
     }
 }
 
-async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
+async fn run_sync(config_path: &Path, force: bool) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
 
@@ -364,16 +364,11 @@ fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
     }
 }
 
-fn run_status(config_path: &PathBuf, format: OutputFormat) -> Result<()> {
-    let config = Config::load(config_path)?;
-    let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
-
-    let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
-    let statuses = collect_status(&config, &rust_versions, &rust_dir);
+fn print_statuses(format: OutputFormat, statuses: &[crate::status::CrateStatus]) -> Result<()> {
     match format {
-        OutputFormat::Table => print_status_table(&statuses),
+        OutputFormat::Table => print_status_table(statuses),
         OutputFormat::Json => {
-            let json = status::format_status_json(&statuses).map_err(|e| {
+            let json = status::format_status_json(statuses).map_err(|e| {
                 error::AiDocsError::Other(format!("failed to serialize status JSON: {e}"))
             })?;
             println!("{json}");
@@ -383,7 +378,16 @@ fn run_status(config_path: &PathBuf, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-fn run_check(config_path: &PathBuf, format: OutputFormat) -> Result<()> {
+fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
+    let config = Config::load(config_path)?;
+    let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
+
+    let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
+    let statuses = collect_status(&config, &rust_versions, &rust_dir);
+    print_statuses(format, &statuses)
+}
+
+fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
@@ -394,15 +398,7 @@ fn run_check(config_path: &PathBuf, format: OutputFormat) -> Result<()> {
         .any(|s| !matches!(s.status, DocsStatus::Synced | DocsStatus::SyncedFallback));
 
     if failing {
-        match format {
-            OutputFormat::Table => print_status_table(&statuses),
-            OutputFormat::Json => {
-                let json = status::format_status_json(&statuses).map_err(|e| {
-                    error::AiDocsError::Other(format!("failed to serialize status JSON: {e}"))
-                })?;
-                println!("{json}");
-            }
-        }
+        print_statuses(format, &statuses)?;
         emit_check_failures_for_ci(&statuses);
         return Err(error::AiDocsError::Other(
             "Documentation is outdated, missing, or corrupted. Run: cargo ai-fdocs sync"
@@ -412,12 +408,8 @@ fn run_check(config_path: &PathBuf, format: OutputFormat) -> Result<()> {
 
     match format {
         OutputFormat::Table => info!("All configured crate docs are up to date."),
-        OutputFormat::Json => {
-            let json = status::format_status_json(&statuses).map_err(|e| {
-                error::AiDocsError::Other(format!("failed to serialize status JSON: {e}"))
-            })?;
-            println!("{json}");
-        }
+        OutputFormat::Json => print_statuses(format, &statuses)?,
     }
+
     Ok(())
 }
