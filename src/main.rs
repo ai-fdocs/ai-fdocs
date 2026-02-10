@@ -278,15 +278,19 @@ async fn sync_one_crate(
         return SyncOutcome::Error;
     }
 
+    let save_ctx = storage::SaveContext {
+        repo: &repo,
+        resolved: &resolved,
+        max_file_size_kb,
+    };
+
     match storage::save_crate_files(
         &rust_output_dir,
         &crate_name,
         &version,
-        &repo,
-        &resolved,
+        &save_ctx,
         &fetched_files,
         &crate_doc,
-        max_file_size_kb,
     ) {
         Ok(saved) => SyncOutcome::Synced(saved),
         Err(e) => {
