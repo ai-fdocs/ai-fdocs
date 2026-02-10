@@ -1,14 +1,12 @@
 # cargo-ai-fdocs
 
-**Version-locked documentation for AI coding assistants.**
+CLI-инструмент для синхронизации version-locked документации зависимостей,
+чтобы AI-ассистенты работали с актуальными API.
 
-Sync README, CHANGELOG, and guides from your Rust dependencies — pinned to the exact versions in your `Cargo.lock` — so Cursor, Copilot, Windsurf, and other AI tools stop hallucinating about APIs that changed three releases ago.
+## Что уже работает
 
-```bash
-cargo install cargo-ai-fdocs
-cargo ai-fdocs init      # scan Cargo.lock, generate config
-cargo ai-fdocs sync      # fetch docs into docs/ai/vendor-docs/rust/
-```
+- `cargo ai-docs sync` — синхронизация документации по `Cargo.lock`.
+- `cargo ai-docs status` — проверка актуальности сохранённых документов.
 
 ## The problem no one talks about honestly
 

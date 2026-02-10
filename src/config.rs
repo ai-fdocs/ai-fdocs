@@ -38,7 +38,9 @@ pub struct CrateConfig {
 
     /// Instructions for AI (goes into _INDEX.md)
     #[serde(default)]
-    pub ai_notes: String,
+    pub include_migration_guide: bool,
+    #[serde(default = "default_true")]
+    pub prune: bool,
 }
 
 #[derive(Debug, Deserialize)]
