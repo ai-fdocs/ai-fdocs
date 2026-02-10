@@ -137,9 +137,27 @@ For Cursor-like tools, point instructions to:
 This reduces stale API suggestions and makes generated code more consistent
 with your project’s real dependency graph.
 
-## Roadmap (high level)
+## Roadmap to stable release
 
-Planned next steps include richer status/check UX and further CI-oriented diagnostics.
+### 1) Reliability hardening (near-term)
+- Improve retry/backoff behavior for GitHub API and raw-content downloads.
+- Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
+- Expand integration tests for lockfile parsing and fetch fallback scenarios.
+
+### 2) CI and team workflows
+- Stabilize `cargo ai-fdocs check` exit codes for predictable CI gating.
+- Add machine-readable check output mode (JSON) for CI/report tooling.
+- Provide ready-to-copy GitHub Actions recipes in docs.
+
+### 3) Output and cache stability
+- Freeze metadata schema for `.aifd-meta.toml` before `1.0`.
+- Add explicit cache versioning/migrations to avoid breaking upgrades.
+- Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
+
+### 4) Release readiness (v1.0)
+- Finalize CLI UX and help text consistency across all subcommands.
+- Complete cross-platform smoke checks (Linux/macOS/Windows).
+- Publish a compatibility/support policy and semantic-versioning guarantees.
 
 ## License
 
