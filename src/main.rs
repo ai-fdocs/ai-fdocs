@@ -11,8 +11,10 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
 
-use crate::config::{Config, Source};
-use crate::fetcher::github::GitHubFetcher;
+use crate::config::{Config, SourceType};
+use crate::error::Result;
+use crate::fetcher::GitHubFetcher;
+use crate::resolver::LockResolver;
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -128,43 +130,50 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> error::Result<()> {
 
         info!("Syncing {crate_name}@{version}...");
 
-        let mut crate_saved: Option<storage::SavedCrate> = None;
+                let Some(version) = locked_versions.get(name) else {
+                    warn!("Crate '{name}' not found in Cargo.lock. Skipping.");
+                    continue;
+                };
+                info!("  Locked version: {version}");
 
-        for source in &crate_doc.sources {
-            match source {
-                Source::GitHub { repo, files } => {
-                    let resolved = match fetcher.resolve_ref(repo, &version).await {
-                        Ok(r) => r,
-                        Err(e) => {
-                            warn!("  ✗ failed to resolve ref: {e}");
-                            stats.errors += 1;
-                            continue;
-                        }
-                    };
+                let Some(github_source) = crate_cfg
+                    .sources
+                    .iter()
+                    .find(|source| source.source_type == SourceType::Github)
+                else {
+                    warn!("  ❌ no source with type='github' configured. Skipping.");
+                    continue;
+                };
 
-                    if resolved.is_fallback {
-                        warn!(
-                            "  ⚠ no exact tag for {crate_name}@{version}, using {}",
-                            resolved.git_ref
-                        );
-                    }
+                let resolved = fetcher
+                    .resolve_ref(&github_source.repo, name, version)
+                    .await?;
+                if resolved.is_fallback {
+                    warn!("  ⚠ Fallback to branch: {}", resolved.git_ref);
+                } else {
+                    info!("  Tag found: {}", resolved.git_ref);
+                }
 
-                    let results = fetcher.fetch_files(repo, &resolved.git_ref, files).await;
-                    let fetched_files: Vec<_> = results
-                        .into_iter()
-                        .filter_map(|r| match r {
-                            Ok(file) => Some(file),
-                            Err(e) => {
-                                warn!("  ✗ {e}");
-                                None
+                if let Some(paths) = &crate_cfg.files {
+                    info!("  Explicit files configured: {}", paths.len());
+                    for path in paths {
+                        match fetcher
+                            .fetch_file(&github_source.repo, &resolved.git_ref, path)
+                            .await?
+                        {
+                            Some(content) => {
+                                info!("  ✅ '{}' fetched ({} bytes)", path, content.len())
                             }
-                        })
-                        .collect();
-
-                    if fetched_files.is_empty() {
-                        warn!("  ✗ no files fetched for {crate_name}@{version}");
-                        stats.errors += 1;
-                        continue;
+                            None => warn!("  ❌ '{}' not found", path),
+                        }
+                    }
+                } else {
+                    match fetcher
+                        .fetch_file(&github_source.repo, &resolved.git_ref, "README.md")
+                        .await?
+                    {
+                        Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
+                        None => warn!("  ❌ README.md not found at README.md"),
                     }
 
                     let saved = storage::save_crate_files(
@@ -186,15 +195,15 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> error::Result<()> {
             }
         }
         Commands::Status => {
-            let config_path = PathBuf::from("ai-fdocs.toml");
-            let config = match Config::load(&config_path) {
-                Ok(config) => config,
-                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
-                    print_config_example();
-                    return Ok(());
-                }
-                Err(err) => return Err(err),
-            };
+            run_status()?;
+        }
+        Commands::Check => {
+            run_status()?;
+        }
+    }
+
+    Ok(())
+}
 
         if let Some(saved) = crate_saved {
             saved_crates.push(saved);
@@ -221,65 +230,4 @@ fn print_config_example() {
     eprintln!("[crates.serde]");
     eprintln!("sources = [{{ type = \"github\", repo = \"serde-rs/serde\" }}]");
     eprintln!("ai_notes = \"Use derive macros for serialization.\"");
-}
-
-async fn run_status(config_path: &PathBuf) -> error::Result<()> {
-    let config = Config::load(config_path)?;
-
-    let cargo_lock_path = PathBuf::from("Cargo.lock");
-    let rust_versions = if cargo_lock_path.exists() {
-        resolver::resolve_cargo_versions(&cargo_lock_path)?
-    } else {
-        std::collections::HashMap::new()
-    };
-
-    let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
-
-    println!("Dependency Status:");
-    println!("{:-<60}", "");
-
-    for (crate_name, _) in &config.crates {
-        let lock_version = rust_versions
-            .get(crate_name.as_str())
-            .cloned()
-            .unwrap_or_else(|| "???".to_string());
-
-        let crate_dir = rust_dir.join(format!("{crate_name}@{lock_version}"));
-
-        let status = if crate_dir.exists() {
-            "✅ OK".to_string()
-        } else {
-            let existing = find_existing_version(&rust_dir, crate_name);
-            match existing {
-                Some(old_ver) => format!("⚠️  OUTDATED ({old_ver} → {lock_version})"),
-                None => "❌ MISSING".to_string(),
-            }
-        };
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub enum State {
-        Synced,
-        SyncedFallback,
-        Missing,
-        Outdated,
-        Corrupted,
-    }
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct Entry {
-        pub crate_name: String,
-        pub state: State,
-    }
-
-fn find_existing_version(ecosystem_dir: &std::path::Path, crate_name: &str) -> Option<String> {
-    let prefix = format!("{crate_name}@");
-    if let Ok(entries) = std::fs::read_dir(ecosystem_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(&prefix) {
-                return Some(name.trim_start_matches(&prefix).to_string());
-            }
-        }
-    }
-    None
 }

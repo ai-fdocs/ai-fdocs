@@ -29,6 +29,7 @@ pub struct Settings {
 #[derive(Debug, Deserialize)]
 pub struct CrateConfig {
     /// Source definitions (at least one is required).
+    #[serde(default)]
     pub sources: Vec<CrateSource>,
 
     /// Optional: Explicit list of files to fetch.
@@ -40,6 +41,19 @@ pub struct CrateConfig {
     pub include_migration_guide: bool,
     #[serde(default = "default_true")]
     pub prune: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrateSource {
+    #[serde(rename = "type")]
+    pub source_type: SourceType,
+    pub repo: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceType {
+    Github,
 }
 
 fn default_output_dir() -> PathBuf {
@@ -71,6 +85,64 @@ impl Config {
         }
         let content = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
+        config.validate()?;
         Ok(config)
+    }
+
+    fn validate(&self) -> Result<()> {
+        for (crate_name, crate_cfg) in &self.crates {
+            if crate_cfg.sources.is_empty() {
+                return Err(AiDocsError::InvalidConfig(format!(
+                    "crate '{crate_name}' must define at least one source"
+                )));
+            }
+
+            let has_github = crate_cfg
+                .sources
+                .iter()
+                .any(|source| source.source_type == SourceType::Github);
+            if !has_github {
+                return Err(AiDocsError::InvalidConfig(format!(
+                    "crate '{crate_name}' must define a source with type = 'github'"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::Config;
+
+    #[test]
+    fn readme_example_parses_with_config_load() {
+        let path = Path::new("examples/ai-docs.toml");
+        let config = Config::load(path).expect("README example must parse");
+
+        assert!(config.crates.contains_key("serde"));
+        assert!(config.crates.contains_key("sqlx"));
+    }
+
+    #[test]
+    fn config_without_sources_fails_validation() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-fdocs-invalid-{suffix}.toml"));
+
+        fs::write(&path, "[crates.serde]\nai_notes = \"x\"\n")
+            .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("config without sources must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err.to_string().contains("must define at least one source"));
     }
 }
