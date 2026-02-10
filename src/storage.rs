@@ -10,8 +10,12 @@ use crate::error::{AiDocsError, Result};
 use crate::fetcher::github::{FetchedFile, ResolvedRef};
 use crate::processor::changelog;
 
+const META_SCHEMA_VERSION: u32 = 1;
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct CrateMeta {
+    #[serde(default)]
+    pub schema_version: u32,
     pub version: String,
     pub git_ref: String,
     pub fetched_at: String,
@@ -129,6 +133,30 @@ fn truncate_if_needed(content: &str, max_size_kb: usize) -> String {
     format!("{truncated}\n\n[TRUNCATED by ai-fdocs at {max_size_kb}KB]\n")
 }
 
+fn load_meta_with_migration(meta_path: &Path) -> Option<CrateMeta> {
+    let content = fs::read_to_string(meta_path).ok()?;
+    let mut meta: CrateMeta = toml::from_str(&content).ok()?;
+
+    if meta.schema_version == 0 {
+        meta.schema_version = META_SCHEMA_VERSION;
+        let rewritten = toml::to_string_pretty(&meta).ok()?;
+        fs::write(meta_path, rewritten).ok()?;
+    }
+
+    if meta.schema_version > META_SCHEMA_VERSION {
+        return None;
+    }
+
+    Some(meta)
+}
+
+fn save_meta(meta_path: &Path, meta: &CrateMeta) -> Result<()> {
+    let meta_content = toml::to_string_pretty(meta)
+        .map_err(|e| AiDocsError::Other(format!("Failed to serialize meta: {e}")))?;
+    fs::write(meta_path, meta_content)?;
+    Ok(())
+}
+
 pub fn is_cached(
     output_dir: &Path,
     crate_name: &str,
@@ -142,20 +170,17 @@ pub fn is_cached(
         return false;
     }
 
-    match fs::read_to_string(&meta_path) {
-        Ok(content) => match toml::from_str::<CrateMeta>(&content) {
-            Ok(meta) => {
-                let expected_fp = crate_config_fingerprint(crate_config);
-                meta.version == version
-                    && meta
-                        .config_fingerprint
-                        .as_ref()
-                        .map(|fp| fp == &expected_fp)
-                        .unwrap_or(false)
-            }
-            Err(_) => false,
-        },
-        Err(_) => false,
+    match load_meta_with_migration(&meta_path) {
+        Some(meta) => {
+            let expected_fp = crate_config_fingerprint(crate_config);
+            meta.version == version
+                && meta
+                    .config_fingerprint
+                    .as_ref()
+                    .map(|fp| fp == &expected_fp)
+                    .unwrap_or(false)
+        }
+        None => false,
     }
 }
 
@@ -205,6 +230,7 @@ pub fn save_crate_files(
     }
 
     let meta = CrateMeta {
+        schema_version: META_SCHEMA_VERSION,
         version: version.to_string(),
         git_ref: save_ctx.resolved.git_ref.clone(),
         fetched_at: Utc::now().format("%Y-%m-%d").to_string(),
@@ -212,9 +238,7 @@ pub fn save_crate_files(
         config_fingerprint: Some(crate_config_fingerprint(crate_config)),
     };
 
-    let meta_content = toml::to_string_pretty(&meta)
-        .map_err(|e| AiDocsError::Other(format!("Failed to serialize meta: {e}")))?;
-    fs::write(crate_dir.join(".aifd-meta.toml"), meta_content)?;
+    save_meta(&crate_dir.join(".aifd-meta.toml"), &meta)?;
 
     info!(
         "  💾 {}@{}: {} files saved to {:?}",
@@ -252,8 +276,7 @@ pub fn read_cached_info(
 ) -> Option<SavedCrate> {
     let crate_dir = output_dir.join(format!("{crate_name}@{version}"));
     let meta_path = crate_dir.join(".aifd-meta.toml");
-    let meta_str = fs::read_to_string(&meta_path).ok()?;
-    let meta: CrateMeta = toml::from_str(&meta_str).ok()?;
+    let meta = load_meta_with_migration(&meta_path)?;
 
     let mut files: Vec<String> = fs::read_dir(&crate_dir)
         .ok()?
@@ -409,5 +432,50 @@ mod tests {
         assert!(summary.contains("# serde@1.0.0"));
         assert!(summary.contains("## AI Notes"));
         assert!(summary.contains("[README.md](README.md)"));
+    }
+    #[test]
+    fn test_load_meta_migrates_legacy_schema() {
+        let tmp =
+            std::env::temp_dir().join(format!("ai-fdocs-meta-migrate-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).expect("create temp dir");
+        let meta_path = tmp.join(".aifd-meta.toml");
+
+        let legacy = r#"version = "1.0.0"
+git_ref = "v1.0.0"
+fetched_at = "2026-01-01"
+is_fallback = false
+config_fingerprint = "abc"
+"#;
+        fs::write(&meta_path, legacy).expect("write legacy meta");
+
+        let migrated = load_meta_with_migration(&meta_path).expect("load migrated");
+        assert_eq!(migrated.schema_version, META_SCHEMA_VERSION);
+
+        let rewritten = fs::read_to_string(&meta_path).expect("read rewritten meta");
+        assert!(rewritten.contains("schema_version = 1"));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_load_meta_rejects_newer_schema() {
+        let tmp = std::env::temp_dir().join(format!("ai-fdocs-meta-newer-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).expect("create temp dir");
+        let meta_path = tmp.join(".aifd-meta.toml");
+
+        let newer = r#"schema_version = 99
+version = "1.0.0"
+git_ref = "v1.0.0"
+fetched_at = "2026-01-01"
+is_fallback = false
+config_fingerprint = "abc"
+"#;
+        fs::write(&meta_path, newer).expect("write newer meta");
+
+        assert!(load_meta_with_migration(&meta_path).is_none());
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }

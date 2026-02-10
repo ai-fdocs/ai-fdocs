@@ -139,12 +139,43 @@ docs/ai/vendor-docs/rust/
 
 В CI-режиме `check` должен показывать причины по каждому проблемному crate; в GitHub Actions — дополнительно печатать `::error` аннотации.
 
-Рецепт для GitHub Actions (минимальный):
+Рецепты для GitHub Actions:
+
+Минимальный `check`:
 ```yaml
 - uses: actions/checkout@v4
 - uses: dtolnay/rust-toolchain@stable
 - uses: Swatinem/rust-cache@v2
 - run: cargo ai-fdocs check --format json
+```
+
+Плановый `sync` (manual/schedule) с авто-коммитом обновлённых docs:
+```yaml
+- uses: actions/checkout@v4
+- uses: dtolnay/rust-toolchain@stable
+- uses: Swatinem/rust-cache@v2
+- env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  run: cargo ai-fdocs sync
+- run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    git add docs/ai/vendor-docs/rust ai-fdocs.toml
+    git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
+- run: git push
+```
+
+Вариант с явным cache key (`actions/cache`) для `~/.cargo/*` и `target`:
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: |
+      ~/.cargo/registry
+      ~/.cargo/git
+      target
+    key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    restore-keys: |
+      ${{ runner.os }}-cargo-
 ```
 
 JSON-контракт `status/check --format json`:
@@ -153,7 +184,7 @@ JSON-контракт `status/check --format json`:
 - `status in {Synced,SyncedFallback,Outdated,Missing,Corrupted}`
 
 ### v0.3 (stability envelope)
-- Зафиксировать схему `.aifd-meta.toml` и добавить versioned cache/migration policy.
+- Для `.aifd-meta.toml` введена схема `schema_version = 1`; legacy-мета без версии мигрируется при чтении, а более новые неизвестные версии считаются несовместимыми.
 - Улучшить UX `_INDEX.md` для больших dependency graph (навигация, секции, подсказки для AI).
 - Уточнить и унифицировать сообщения CLI по всем подкомандам (`sync/status/check/init`).
 
@@ -161,6 +192,9 @@ JSON-контракт `status/check --format json`:
 - Финальная стабилизация CLI и формата выходных данных (semver promises).
 - Кроссплатформенные smoke/regression прогоны (Linux/macOS/Windows).
 - Публичная policy-документация: поддерживаемые версии Rust/OS и правила обратной совместимости.
+
+### Техдолг инструментов (ближайший рефакторинг)
+- `cargo clippy` всё ещё может сигнализировать `too_many_arguments` для `storage::save_crate_files`; это не блокер релиза, но хороший кандидат на декомпозицию API.
 
 ### После v1.0
 - Расширение экосистемы sibling-проектами (Node/npm и далее).
