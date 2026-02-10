@@ -1,16 +1,25 @@
-# cargo-ai-fdocs NPM SDK (scaffold)
+# ai-fdocs (NPM) v0.2
 
-Эта папка содержит заготовку будущей NPM-библиотеки, которую позже можно вынести в отдельный репозиторий.
+Node.js/TypeScript версия `ai-fdocs` с паритетом ключевых фич Rust v0.2:
 
-## Текущий статус
+- `init` из lockfile + npm registry;
+- `sync` с параллельной загрузкой (`MAX_CONCURRENT=8`);
+- `check` для CI (exit code 0/1);
+- `_SUMMARY.md` в каждой папке пакета;
+- `config_hash` для автоматического invalidation кеша;
+- улучшенный `status` с подсказками.
 
-- добавлен базовый `package.json`;
-- подготовлено место под исходники и сборку;
-- CI для Node/NPM пока подключён как заглушка (код ещё не добавлен).
+## Быстрый старт
 
-## План
+```bash
+npm install
+npm run build
+node dist/cli.js --help
+```
 
-1. Добавить исходники SDK (`src/`).
-2. Настроить сборку (например, `tsup`/`tsc`).
-3. Добавить тесты и линтинг.
-4. Включить полноценные проверки в CI.
+## Команды
+
+- `ai-fdocs init [--overwrite]`
+- `ai-fdocs sync [--force]`
+- `ai-fdocs status`
+- `ai-fdocs check`

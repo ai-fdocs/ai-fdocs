@@ -1,0 +1,109 @@
+export interface PackageInfo {
+  name: string;
+  repository: string | null;
+  description: string | null;
+}
+
+interface NpmPackageResponse {
+  name: string;
+  description?: string;
+  repository?:
+    | {
+        type?: string;
+        url?: string;
+        directory?: string;
+      }
+    | string;
+}
+
+export class NpmRegistryClient {
+  private baseUrl = "https://registry.npmjs.org";
+
+  async getPackageInfo(name: string): Promise<PackageInfo | null> {
+    const encodedName = name.replace("/", "%2F");
+    const url = `${this.baseUrl}/${encodedName}`;
+
+    try {
+      const resp = await fetch(url, { headers: { Accept: "application/json" } });
+
+      if (resp.status === 404) return null;
+
+      if (resp.status === 429) {
+        await sleep(2000);
+        const retry = await fetch(url);
+        if (!retry.ok) return null;
+        return parsePackageInfo((await retry.json()) as NpmPackageResponse);
+      }
+
+      if (!resp.ok) return null;
+      return parsePackageInfo((await resp.json()) as NpmPackageResponse);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function parsePackageInfo(data: NpmPackageResponse): PackageInfo {
+  let repoUrl: string | null = null;
+
+  if (data.repository) {
+    if (typeof data.repository === "string") {
+      repoUrl = data.repository;
+    } else if (data.repository.url) {
+      repoUrl = data.repository.url;
+    }
+  }
+
+  return {
+    name: data.name,
+    repository: repoUrl,
+    description: data.description ?? null,
+  };
+}
+
+export function extractGithubRepo(url: string): { repo: string; subpath?: string } | null {
+  let cleaned = url.trim();
+
+  if (cleaned.startsWith("github:")) {
+    return { repo: cleaned.replace("github:", "").trim() };
+  }
+
+  cleaned = cleaned.replace(/^git\+/, "");
+  if (!cleaned.includes("github.com")) return null;
+
+  cleaned = cleaned
+    .replace("https://github.com/", "")
+    .replace("http://github.com/", "")
+    .replace("git://github.com/", "")
+    .replace("ssh://git@github.com/", "")
+    .replace("git@github.com:", "");
+
+  cleaned = cleaned.replace(/\.git$/, "").replace(/\/$/, "");
+
+  const parts = cleaned.split("/");
+  if (parts.length < 2) return null;
+
+  const repo = `${parts[0]}/${parts[1]}`;
+  let subpath: string | undefined;
+  if (parts.length > 4 && parts[2] === "tree") {
+    subpath = parts.slice(4).join("/");
+  }
+
+  return { repo, subpath };
+}
+
+export function extractSubpathFromRepo(repoField: unknown): string | undefined {
+  if (
+    repoField &&
+    typeof repoField === "object" &&
+    "directory" in repoField &&
+    typeof (repoField as { directory?: unknown }).directory === "string"
+  ) {
+    return (repoField as { directory: string }).directory;
+  }
+  return undefined;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

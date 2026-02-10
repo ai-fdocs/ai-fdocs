@@ -1,0 +1,123 @@
+import { AiDocsError } from "./error.js";
+
+export interface ResolvedRef {
+  gitRef: string;
+  isFallback: boolean;
+}
+
+export interface FetchedFile {
+  path: string;
+  content: string;
+}
+
+interface GitTreeResponse {
+  tree?: Array<{ path: string; type: string }>;
+}
+
+export class GitHubClient {
+  private token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+
+  async resolveRef(repo: string, _name: string, version: string): Promise<ResolvedRef> {
+    const candidates = [
+      `v${version}`,
+      version,
+      `refs/tags/v${version}`,
+      `refs/tags/${version}`,
+    ];
+
+    for (const ref of candidates) {
+      if (await this.refExists(repo, ref)) {
+        return { gitRef: ref.replace("refs/tags/", ""), isFallback: false };
+      }
+    }
+
+    if (await this.refExists(repo, "main")) {
+      return { gitRef: "main", isFallback: true };
+    }
+    if (await this.refExists(repo, "master")) {
+      return { gitRef: "master", isFallback: true };
+    }
+
+    throw new AiDocsError(`No suitable git ref found for ${repo}`, "NO_REF");
+  }
+
+  async fetchExplicitFiles(repo: string, ref: string, files: string[]): Promise<FetchedFile[]> {
+    const out: FetchedFile[] = [];
+    for (const file of files) {
+      const content = await this.fetchRaw(repo, ref, file);
+      if (content !== null) out.push({ path: file, content });
+    }
+    return out;
+  }
+
+  async fetchDefaultFiles(repo: string, ref: string, subpath?: string): Promise<FetchedFile[]> {
+    const tree = await this.fetchTree(repo, ref);
+    const base = subpath ? `${subpath.replace(/\/$/, "")}/` : "";
+    const preferred = new Set([
+      "readme.md",
+      "changelog.md",
+      "changes.md",
+      "history.md",
+      "license",
+      "license.md",
+      "docs/readme.md",
+    ]);
+
+    const picked = tree
+      .filter((f) => f.type === "blob")
+      .filter((f) => !base || f.path.startsWith(base))
+      .map((f) => ({ ...f, rel: base ? f.path.slice(base.length) : f.path }))
+      .filter((f) => {
+        const lower = f.rel.toLowerCase();
+        if (preferred.has(lower)) return true;
+        return lower.startsWith("docs/") && lower.endsWith(".md");
+      })
+      .slice(0, 40);
+
+    const out: FetchedFile[] = [];
+    for (const file of picked) {
+      const content = await this.fetchRaw(repo, ref, file.path);
+      if (content !== null) out.push({ path: file.rel, content });
+    }
+    return out;
+  }
+
+  private async refExists(repo: string, ref: string): Promise<boolean> {
+    const url = `https://api.github.com/repos/${repo}/git/ref/${ref.startsWith("refs/") ? ref : `heads/${ref}`}`;
+    const resp = await fetch(url, { headers: this.headers() });
+    if (resp.ok) return true;
+
+    if (!ref.startsWith("refs/")) {
+      const tagUrl = `https://api.github.com/repos/${repo}/git/ref/tags/${ref}`;
+      const tagResp = await fetch(tagUrl, { headers: this.headers() });
+      return tagResp.ok;
+    }
+
+    return false;
+  }
+
+  private async fetchTree(repo: string, ref: string): Promise<Array<{ path: string; type: string }>> {
+    const url = `https://api.github.com/repos/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`;
+    const resp = await fetch(url, { headers: this.headers() });
+    if (!resp.ok) {
+      throw new AiDocsError(`Failed to fetch file tree for ${repo}@${ref}`, "FETCH_TREE");
+    }
+    const data = (await resp.json()) as GitTreeResponse;
+    return data.tree ?? [];
+  }
+
+  private async fetchRaw(repo: string, ref: string, filePath: string): Promise<string | null> {
+    const url = `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(ref)}/${filePath}`;
+    const resp = await fetch(url, { headers: this.headers() });
+    if (!resp.ok) return null;
+    return resp.text();
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      Accept: "application/vnd.github+json",
+      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      "User-Agent": "ai-fdocs/0.2.0",
+    };
+  }
+}
