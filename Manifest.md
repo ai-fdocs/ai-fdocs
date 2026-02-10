@@ -1,5 +1,7 @@
 # AI Fresh Docs (cargo-ai-fdocs) — Manifest (v0.1-alpha, updated)
 
+> Отдельный детальный план интеграции latest-docs: `MANIFEST_DOCSRS_LATEST.md`.
+
 ## 1. Обзор проекта
 
 ### Проблема
