@@ -336,6 +336,10 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
+fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
+    !github_actions && matches!(format, OutputFormat::Table)
+}
+
 fn emit_check_failures_for_ci(format: OutputFormat, statuses: &[crate::status::CrateStatus]) {
     let github_actions = std::env::var("GITHUB_ACTIONS")
         .ok()
@@ -353,7 +357,7 @@ fn emit_check_failures_for_ci(format: OutputFormat, statuses: &[crate::status::C
                 status.status.as_str(),
                 status.reason
             );
-        } else if matches!(format, OutputFormat::Table) {
+        } else if should_emit_plain_check_errors(format, github_actions) {
             eprintln!(
                 "[ai-fdocs check] {} [{}] {}",
                 status.crate_name,
@@ -412,4 +416,21 @@ fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{should_emit_plain_check_errors, OutputFormat};
+
+    #[test]
+    fn emits_plain_errors_only_for_table_outside_gha() {
+        assert!(should_emit_plain_check_errors(OutputFormat::Table, false));
+        assert!(!should_emit_plain_check_errors(OutputFormat::Json, false));
+    }
+
+    #[test]
+    fn never_emits_plain_errors_in_github_actions() {
+        assert!(!should_emit_plain_check_errors(OutputFormat::Table, true));
+        assert!(!should_emit_plain_check_errors(OutputFormat::Json, true));
+    }
 }
