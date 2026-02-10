@@ -4,20 +4,25 @@ mod fetcher;
 mod index;
 mod processor;
 mod resolver;
-mod storage;
+mod status;
+
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 use tracing::{error, info, warn};
 
 use crate::config::{Config, Source};
 use crate::fetcher::github::GitHubFetcher;
 
 #[derive(Parser)]
-#[command(
-    name = "cargo-ai-docs",
-    about = "Sync up-to-date library documentation for AI agents"
-)]
+#[command(name = "cargo-ai-fdocs")]
+#[command(bin_name = "cargo")]
+enum CargoCli {
+    AiFdocs(Cli),
+}
+
+#[derive(Parser)]
+#[command(version, about = "Sync documentation from dependencies for AI context")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -25,7 +30,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Sync documentation for all configured dependencies
     Sync {
         #[arg(short, long, default_value = "ai-docs.toml")]
         config: PathBuf,
@@ -37,6 +41,8 @@ enum Commands {
         #[arg(short, long, default_value = "ai-docs.toml")]
         config: PathBuf,
     },
+    Status,
+    Check,
 }
 
 #[derive(Default)]
@@ -49,7 +55,12 @@ struct SyncStats {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .init();
 
     let args: Vec<String> = std::env::args()
         .enumerate()
@@ -57,7 +68,8 @@ async fn main() {
         .map(|(_, arg)| arg)
         .collect();
 
-    let cli = Cli::parse_from(args);
+async fn run() -> Result<()> {
+    let CargoCli::AiFdocs(cli) = CargoCli::parse();
 
     match cli.command {
         Commands::Sync { config, force } => {
@@ -173,6 +185,16 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> error::Result<()> {
                 }
             }
         }
+        Commands::Status => {
+            let config_path = PathBuf::from("ai-fdocs.toml");
+            let config = match Config::load(&config_path) {
+                Ok(config) => config,
+                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
+                    print_config_example();
+                    return Ok(());
+                }
+                Err(err) => return Err(err),
+            };
 
         if let Some(saved) = crate_saved {
             saved_crates.push(saved);
@@ -189,7 +211,16 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> error::Result<()> {
         stats.synced, stats.cached, stats.skipped, stats.errors
     );
 
-    Ok(())
+fn print_config_example() {
+    eprintln!("ai-fdocs.toml not found. Create one in your project root.");
+    eprintln!();
+    eprintln!("Example:");
+    eprintln!("[crates.axum]");
+    eprintln!("sources = [{{ type = \"github\", repo = \"tokio-rs/axum\" }}]");
+    eprintln!();
+    eprintln!("[crates.serde]");
+    eprintln!("sources = [{{ type = \"github\", repo = \"serde-rs/serde\" }}]");
+    eprintln!("ai_notes = \"Use derive macros for serialization.\"");
 }
 
 async fn run_status(config_path: &PathBuf) -> error::Result<()> {
@@ -225,11 +256,20 @@ async fn run_status(config_path: &PathBuf) -> error::Result<()> {
             }
         };
 
-        println!("  {crate_name:30} {lock_version:12} {status}");
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum State {
+        Synced,
+        SyncedFallback,
+        Missing,
+        Outdated,
+        Corrupted,
     }
 
-    Ok(())
-}
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Entry {
+        pub crate_name: String,
+        pub state: State,
+    }
 
 fn find_existing_version(ecosystem_dir: &std::path::Path, crate_name: &str) -> Option<String> {
     let prefix = format!("{crate_name}@");

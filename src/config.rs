@@ -1,28 +1,41 @@
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
 
 use crate::error::{AiDocsError, Result};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub settings: Settings,
+
     #[serde(default)]
-    pub crates: HashMap<String, CrateDoc>,
-    #[serde(default)]
-    pub npm: HashMap<String, NpmDoc>,
+    pub crates: HashMap<String, CrateConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_output_dir")]
     pub output_dir: PathBuf,
+
     #[serde(default = "default_max_file_size_kb")]
     pub max_file_size_kb: usize,
+
     #[serde(default = "default_true")]
-    pub include_changelog: bool,
-    #[serde(default = "default_true")]
-    pub include_readme: bool,
+    pub prune: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrateConfig {
+    /// Source definitions (at least one is required).
+    pub sources: Vec<CrateSource>,
+
+    /// Optional: Explicit list of files to fetch.
+    /// Paths are relative to repo root.
+    pub files: Option<Vec<String>>,
+
+    /// Instructions for AI (goes into _INDEX.md)
     #[serde(default)]
     pub include_migration_guide: bool,
     #[serde(default = "default_true")]
@@ -30,7 +43,7 @@ pub struct Settings {
 }
 
 fn default_output_dir() -> PathBuf {
-    PathBuf::from("docs/ai/vendor-docs")
+    PathBuf::from("docs/ai/vendor-docs/rust")
 }
 
 fn default_max_file_size_kb() -> usize {
@@ -41,33 +54,14 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CrateDoc {
-    #[serde(default)]
-    pub sources: Vec<Source>,
-    #[serde(default)]
-    pub ai_notes: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct NpmDoc {
-    #[serde(default)]
-    pub sources: Vec<Source>,
-    #[serde(default)]
-    pub ai_notes: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type")]
-pub enum Source {
-    #[serde(rename = "github")]
-    GitHub {
-        repo: String,
-        #[serde(default)]
-        files: Vec<String>,
-    },
-    #[serde(rename = "docs-rs")]
-    DocsRs,
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            output_dir: default_output_dir(),
+            max_file_size_kb: default_max_file_size_kb(),
+            prune: default_true(),
+        }
+    }
 }
 
 impl Config {
