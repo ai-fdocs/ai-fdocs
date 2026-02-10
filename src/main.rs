@@ -2,6 +2,7 @@ mod config;
 mod error;
 mod fetcher;
 mod resolver;
+mod status;
 
 use std::path::PathBuf;
 
@@ -140,7 +141,25 @@ async fn run() -> Result<()> {
             }
         }
         Commands::Status => {
-            println!("(Status command implementation pending Stage 4)");
+            let config_path = PathBuf::from("ai-fdocs.toml");
+            let config = match Config::load(&config_path) {
+                Ok(config) => config,
+                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
+                    print_config_example();
+                    return Ok(());
+                }
+                Err(err) => return Err(err),
+            };
+
+            let lock_path = PathBuf::from("Cargo.lock");
+            let locked_versions = LockResolver::resolve(&lock_path)?;
+
+            let statuses = status::collect_status(
+                &config,
+                &locked_versions,
+                config.settings.output_dir.as_path(),
+            );
+            status::print_status_table(&statuses);
         }
     }
 
