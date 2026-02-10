@@ -1,40 +1,40 @@
 # ai-fdocs (NPM) v0.2
 
-Node.js/TypeScript версия `ai-fdocs` с паритетом ключевых фич Rust v0.2:
+Node.js/TypeScript version of `ai-fdocs` with core feature parity for Rust v0.2:
 
-- `init` из `package.json` (прямые зависимости) + npm registry;
-- `sync` с параллельной загрузкой (`MAX_CONCURRENT=8`);
-- `check` для CI (exit code 0/1);
-- `_SUMMARY.md` в каждой папке пакета;
-- `config_hash` для автоматического invalidation кеша;
-- улучшенный `status` с подсказками.
+- `init` from `package.json` (direct dependencies) + npm registry;
+- `sync` with parallel downloads (`MAX_CONCURRENT=8`);
+- `check` for CI (exit code 0/1);
+- `_SUMMARY.md` in each package folder;
+- `config_hash` for automatic cache invalidation;
+- improved `status` with hints.
 
-## Экспериментальный режим источника docs
+## Experimental docs source mode
 
-По умолчанию документация тянется из GitHub-репозитория пакета.
+By default, documentation is fetched from a package's GitHub repository.
 
-Можно включить экспериментальный режим, который тянет docs из npm tarball:
+You can enable an experimental mode that fetches docs from the npm tarball:
 
 ```toml
 [settings]
 experimental_npm_tarball = true
 ```
 
-> ⚠️ Это экспериментальный режим: может вести себя иначе для нестандартных пакетов.
+> ⚠️ This is an experimental mode and may behave differently for non-standard packages.
 
-## Безопасность и поведение при недоступности источников
+## Safety and degraded-source behavior
 
-`npm-ai-fdocs` должен работать в безопасном degraded-режиме, если источники docs
-временно недоступны (GitHub/npm registry):
+`npm-ai-fdocs` is designed to operate safely in degraded mode when docs sources
+are temporarily unavailable (GitHub/npm registry):
 
-- не ломать приложение и исходный код проекта;
-- не падать целиком из-за одного проблемного пакета (best-effort);
-- сохранять ранее скачанный кеш;
-- явно показывать ошибки в `status/check` и CI.
+- must not break application code or project source files;
+- must not fail the entire run because of one problematic package (best-effort);
+- should preserve previously downloaded cache;
+- should report errors clearly in `status/check` and CI.
 
-Итог: при сетевых проблемах ухудшается свежесть документации, но не стабильность платформы.
+Result: network issues reduce docs freshness, but not platform stability.
 
-## Быстрый старт
+## Quick start
 
 ```bash
 npm install
@@ -42,12 +42,13 @@ npm run build
 node dist/cli.js --help
 ```
 
-## Команды
+## Commands
 
 - `ai-fdocs init [--overwrite]`
 - `ai-fdocs sync [--force]`
 - `ai-fdocs status`
 - `ai-fdocs check`
-## План развития
 
-Подробная дорожная карта: [`ROADMAP.md`](./ROADMAP.md).
+## Roadmap
+
+Detailed roadmap: [`ROADMAP.md`](./ROADMAP.md).
