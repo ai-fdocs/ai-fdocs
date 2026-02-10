@@ -39,6 +39,20 @@ We treat this as an engineering hygiene problem:
 - docs are fetched for that exact version (or fallback branch with warning);
 - local docs are refreshed after dependency updates.
 
+## Safety and degraded-mode behavior
+
+AI Fresh Docs is designed to be **non-blocking** for your development platform.
+If external documentation sources (GitHub/registry) are unavailable, the tool must
+behave safely:
+
+- never mutate or delete project source code;
+- keep already downloaded docs cache intact unless explicit prune rules apply;
+- continue processing other dependencies (best-effort) instead of crashing whole run;
+- return clear diagnostics in `status/check` so CI and users can see what failed;
+- fail only the docs check contract (`check` exit code) rather than breaking runtime/application logic.
+
+In short: network outages degrade docs freshness, but must not break the host project.
+
 ## Current alpha scope (this repository)
 
 Implemented now:
