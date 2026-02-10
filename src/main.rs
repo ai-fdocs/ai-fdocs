@@ -18,10 +18,13 @@ use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
+use crate::error::AiDocsError;
 use crate::error::{Result, SyncErrorKind};
-use crate::fetcher::github::{FileRequest, GitHubFetcher};
+use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
 use crate::init::run_init as run_init_command;
 use crate::status::{collect_status, print_status_table, DocsStatus};
+
+const DEFAULT_CONFIG_PATH: &str = "ai-fdocs.toml";
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -42,26 +45,33 @@ struct Cli {
 enum Commands {
     /// Download/update vendor documentation
     Sync {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Ignore local cache and re-fetch configured docs.
         #[arg(long, default_value_t = false)]
         force: bool,
     },
+    /// Show documentation sync status for configured crates.
     Status {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Output format for status report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
     },
+    /// Exit non-zero if any crate docs are not synced.
     Check {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Output format for check report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
     },
+    /// Generate or refresh ai-fdocs config template.
     Init {
-        #[arg(short, long, default_value = "ai-fdocs.toml")]
+        #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Overwrite existing config file.
         #[arg(long, default_value_t = false)]
         force: bool,
     },
@@ -288,21 +298,16 @@ async fn sync_one_crate(
         .fetch_files(&repo, &resolved.git_ref, &requests)
         .await;
 
-    let fetched_files: Vec<_> = results
-        .into_iter()
-        .filter_map(|r| match r {
-            Ok(file) => Some(file),
-            Err(e) => match e {
-                crate::error::AiDocsError::OptionalFileNotFound(_) => None,
-                other => {
-                    warn!("  ✗ {crate_name}@{version}: {other}");
-                    None
-                }
-            },
-        })
-        .collect();
+    let fetched = collect_fetched_files(results, &crate_name, &version);
+    if fetched.non_optional_errors > 0 && !fetched.files.is_empty() {
+        warn!(
+            "  ⚠ partial fetch for {crate_name}@{version}: {} file error(s), continuing with {} fetched file(s)",
+            fetched.non_optional_errors,
+            fetched.files.len()
+        );
+    }
 
-    if fetched_files.is_empty() {
+    if fetched.files.is_empty() {
         warn!("  ✗ no files fetched for {crate_name}@{version}");
         return SyncOutcome::Error(SyncErrorKind::NotFound);
     }
@@ -326,6 +331,38 @@ async fn sync_one_crate(
             warn!("  ✗ failed to save {crate_name}@{version}: {e}");
             SyncOutcome::Error(e.sync_kind())
         }
+    }
+}
+
+struct FetchCollection {
+    files: Vec<FetchedFile>,
+    non_optional_errors: usize,
+}
+
+fn collect_fetched_files(
+    results: Vec<Result<FetchedFile>>,
+    crate_name: &str,
+    version: &str,
+) -> FetchCollection {
+    let mut files = Vec::new();
+    let mut non_optional_errors = 0;
+
+    for r in results {
+        match r {
+            Ok(file) => files.push(file),
+            Err(e) => match e {
+                AiDocsError::OptionalFileNotFound(_) => {}
+                other => {
+                    non_optional_errors += 1;
+                    warn!("  ✗ {crate_name}@{version}: {other}");
+                }
+            },
+        }
+    }
+
+    FetchCollection {
+        files,
+        non_optional_errors,
     }
 }
 
@@ -455,7 +492,12 @@ fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{should_emit_plain_check_errors, OutputFormat};
+    use super::{
+        build_requests, collect_fetched_files, should_emit_plain_check_errors, OutputFormat,
+    };
+    use crate::error::AiDocsError;
+    use crate::fetcher::github::FetchedFile;
+    use clap::CommandFactory;
 
     #[test]
     fn emits_plain_errors_only_for_table_outside_gha() {
@@ -467,5 +509,82 @@ mod tests {
     fn never_emits_plain_errors_in_github_actions() {
         assert!(!should_emit_plain_check_errors(OutputFormat::Table, true));
         assert!(!should_emit_plain_check_errors(OutputFormat::Json, true));
+    }
+
+    #[test]
+    fn build_requests_prefers_explicit_files_and_marks_them_required() {
+        let requests = build_requests(
+            Some("docs"),
+            Some(vec!["README.md".to_string(), "guide/intro.md".to_string()]),
+        );
+
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|r| r.required));
+        assert_eq!(requests[0].candidates, vec!["README.md"]);
+        assert_eq!(requests[1].candidates, vec!["guide/intro.md"]);
+    }
+
+    #[test]
+    fn collect_fetched_files_keeps_successes_on_partial_failures() {
+        let results = vec![
+            Ok(FetchedFile {
+                path: "README.md".to_string(),
+                source_url: "https://example.invalid/readme".to_string(),
+                content: "hello".to_string(),
+            }),
+            Err(AiDocsError::OptionalFileNotFound(
+                "CHANGELOG.md".to_string(),
+            )),
+            Err(AiDocsError::GitHubFileNotFound {
+                repo: "owner/repo".to_string(),
+                path: "docs/guide.md".to_string(),
+                tried_tags: vec!["v1.0.0".to_string()],
+            }),
+        ];
+
+        let kept = collect_fetched_files(results, "demo", "1.0.0");
+        assert_eq!(kept.files.len(), 1);
+        assert_eq!(kept.files[0].path, "README.md");
+        assert_eq!(kept.non_optional_errors, 1);
+    }
+
+    #[test]
+    fn collect_fetched_files_counts_only_non_optional_errors() {
+        let results = vec![
+            Err(AiDocsError::OptionalFileNotFound("README.md".to_string())),
+            Err(AiDocsError::OptionalFileNotFound(
+                "CHANGELOG.md".to_string(),
+            )),
+        ];
+
+        let kept = collect_fetched_files(results, "demo", "1.0.0");
+        assert!(kept.files.is_empty());
+        assert_eq!(kept.non_optional_errors, 0);
+    }
+
+    #[test]
+    fn cli_subcommands_have_consistent_help_and_config_flag() {
+        let mut command = super::CargoCli::command();
+        command.build();
+
+        let ai_fdocs_cmd = command
+            .find_subcommand("ai-fdocs")
+            .expect("ai-fdocs subcommand present");
+
+        for sub in ["sync", "status", "check", "init"] {
+            let sub_cmd = ai_fdocs_cmd
+                .find_subcommand(sub)
+                .unwrap_or_else(|| panic!("missing subcommand: {sub}"));
+
+            assert!(
+                sub_cmd.get_about().is_some(),
+                "subcommand should have help text: {sub}"
+            );
+
+            let has_config = sub_cmd
+                .get_arguments()
+                .any(|arg| arg.get_id().as_str() == "config");
+            assert!(has_config, "subcommand should expose --config: {sub}");
+        }
     }
 }
