@@ -336,7 +336,7 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
-fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
+fn emit_check_failures_for_ci(format: OutputFormat, statuses: &[crate::status::CrateStatus]) {
     let github_actions = std::env::var("GITHUB_ACTIONS")
         .ok()
         .map(|v| v == "true")
@@ -353,7 +353,7 @@ fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
                 status.status.as_str(),
                 status.reason
             );
-        } else {
+        } else if matches!(format, OutputFormat::Table) {
             eprintln!(
                 "[ai-fdocs check] {} [{}] {}",
                 status.crate_name,
@@ -399,7 +399,7 @@ fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
 
     if failing {
         print_statuses(format, &statuses)?;
-        emit_check_failures_for_ci(&statuses);
+        emit_check_failures_for_ci(format, &statuses);
         return Err(error::AiDocsError::Other(
             "Documentation is outdated, missing, or corrupted. Run: cargo ai-fdocs sync"
                 .to_string(),
