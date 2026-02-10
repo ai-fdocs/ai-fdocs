@@ -46,13 +46,19 @@ struct RepoInfo {
 
 impl GitHubFetcher {
     pub fn new() -> Self {
-        Self::with_base_urls(
+        Self::with_base_urls_internal(
             "https://api.github.com",
             "https://raw.githubusercontent.com",
+            false,
         )
     }
 
-    fn with_base_urls(api_base_url: &str, raw_base_url: &str) -> Self {
+    #[cfg(test)]
+    fn with_base_urls_no_proxy(api_base_url: &str, raw_base_url: &str) -> Self {
+        Self::with_base_urls_internal(api_base_url, raw_base_url, true)
+    }
+
+    fn with_base_urls_internal(api_base_url: &str, raw_base_url: &str, no_proxy: bool) -> Self {
         let token = env::var("GITHUB_TOKEN")
             .or_else(|_| env::var("GH_TOKEN"))
             .ok();
@@ -70,13 +76,16 @@ impl GitHubFetcher {
             );
         }
 
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .user_agent(APP_USER_AGENT)
             .default_headers(headers)
-            .no_proxy()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("reqwest client");
+            .timeout(Duration::from_secs(30));
+
+        if no_proxy {
+            builder = builder.no_proxy();
+        }
+
+        let client = builder.build().expect("reqwest client");
 
         Self {
             client,
@@ -361,7 +370,8 @@ mod tests {
         );
 
         let api_base = start_mock_server(routes);
-        let fetcher = GitHubFetcher::with_base_urls(api_base.as_str(), "http://raw.invalid");
+        let fetcher =
+            GitHubFetcher::with_base_urls_no_proxy(api_base.as_str(), "http://raw.invalid");
 
         let resolved = fetcher
             .resolve_ref("owner/repo", "demo", "1.2.3")
@@ -385,7 +395,8 @@ mod tests {
         routes.insert("/owner/repo/main/LICENSE".to_string(), (404, String::new()));
 
         let raw_base = start_mock_server(routes);
-        let fetcher = GitHubFetcher::with_base_urls("http://api.invalid", raw_base.as_str());
+        let fetcher =
+            GitHubFetcher::with_base_urls_no_proxy("http://api.invalid", raw_base.as_str());
 
         let requests = vec![
             FileRequest {

@@ -264,7 +264,7 @@ with your project’s real dependency graph.
 ### 3) Output and cache stability
 - `.aifd-meta.toml` now carries an explicit schema version (`schema_version = 1`) as a stable baseline.
 - Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
-- Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
+- [x] Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
 
 ### 4) Release readiness (v1.0)
 - [x] Finalize CLI UX and help text consistency across all subcommands.
