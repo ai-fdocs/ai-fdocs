@@ -27,6 +27,14 @@ Alignment policy for `npn/`:
 - same output layout principles (`_INDEX.md`, per-package folders, metadata);
 - same cache/status semantics where possible, adapted for npm packages.
 
+
+## Detailed technical documentation
+
+See [`docs/architecture`](./docs/architecture):
+
+- [Core Rust module](./docs/architecture/rust-module.md)
+- [NPM clone](./docs/architecture/npm-clone.md)
+
 ## Why this exists
 
 In practice, many AI coding failures happen not because the model cannot reason,
@@ -63,7 +71,7 @@ Implemented now:
 - prune outdated crate folders;
 - generate global index (`_INDEX.md`);
 - show status of synced docs;
-- continue sync when one crate/file fails (best-effort), reporting errors in итоговой статистике.
+- continue sync when one crate/file fails (best-effort), reporting errors in final summary statistics.
 - run crate sync in parallel for faster lockfile processing.
 
 Current commands:

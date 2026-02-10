@@ -27,14 +27,7 @@ use crate::status::{collect_status, print_status_table, DocsStatus};
 const DEFAULT_CONFIG_PATH: &str = "ai-fdocs.toml";
 
 #[derive(Parser)]
-#[command(name = "cargo-ai-fdocs")]
-#[command(bin_name = "cargo")]
-enum CargoCli {
-    #[command(name = "ai-fdocs")]
-    AiFdocs(Cli),
-}
-
-#[derive(Parser)]
+#[command(name = "ai-fdocs")]
 #[command(version, about = "Sync documentation from dependencies for AI context")]
 struct Cli {
     #[command(subcommand)]
@@ -129,9 +122,7 @@ async fn main() {
         .map(|(_, arg)| arg)
         .collect();
 
-    let parse = CargoCli::try_parse_from(args).map(|parsed| match parsed {
-        CargoCli::AiFdocs(cli) => cli,
-    });
+    let parse = Cli::try_parse_from(args);
 
     let cli = match parse {
         Ok(cli) => cli,
@@ -563,15 +554,11 @@ mod tests {
 
     #[test]
     fn cli_subcommands_have_consistent_help_and_config_flag() {
-        let mut command = super::CargoCli::command();
+        let mut command = super::Cli::command();
         command.build();
 
-        let ai_fdocs_cmd = command
-            .find_subcommand("ai-fdocs")
-            .expect("ai-fdocs subcommand present");
-
         for sub in ["sync", "status", "check", "init"] {
-            let sub_cmd = ai_fdocs_cmd
+            let sub_cmd = command
                 .find_subcommand(sub)
                 .unwrap_or_else(|| panic!("missing subcommand: {sub}"));
 
