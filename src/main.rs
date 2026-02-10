@@ -37,6 +37,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Download/update vendor documentation
     Sync {
         #[arg(short, long, default_value = "ai-fdocs.toml")]
         config: PathBuf,
