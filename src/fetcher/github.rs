@@ -35,6 +35,8 @@ pub struct FileRequest {
 
 pub struct GitHubFetcher {
     client: Client,
+    api_base_url: String,
+    raw_base_url: String,
 }
 
 #[derive(Deserialize)]
@@ -68,7 +70,41 @@ impl GitHubFetcher {
             .build()
             .expect("reqwest client");
 
-        Self { client }
+        Self {
+            client,
+            api_base_url: "https://api.github.com".to_string(),
+            raw_base_url: "https://raw.githubusercontent.com".to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_base_urls(api_base_url: String, raw_base_url: String) -> Self {
+        let client = Client::builder()
+            .user_agent(APP_USER_AGENT)
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("reqwest client");
+
+        Self {
+            client,
+            api_base_url,
+            raw_base_url,
+        }
+    }
+
+    fn api_tag_url(&self, owner_repo: &str, tag: &str) -> String {
+        format!(
+            "{}/repos/{owner_repo}/git/ref/tags/{tag}",
+            self.api_base_url
+        )
+    }
+
+    fn api_repo_url(&self, owner_repo: &str) -> String {
+        format!("{}/repos/{owner_repo}", self.api_base_url)
+    }
+
+    fn raw_file_url(&self, repo: &str, git_ref: &str, candidate: &str) -> String {
+        format!("{}/{repo}/{git_ref}/{candidate}", self.raw_base_url)
     }
 
     pub async fn resolve_ref(
@@ -85,7 +121,7 @@ impl GitHubFetcher {
         ];
 
         for tag in candidates {
-            let url = format!("https://api.github.com/repos/{owner_repo}/git/ref/tags/{tag}");
+            let url = self.api_tag_url(owner_repo, &tag);
             let res = self.send_with_retry(url.as_str()).await?;
             if res.status().is_success() {
                 return Ok(ResolvedRef {
@@ -99,7 +135,7 @@ impl GitHubFetcher {
             }
         }
 
-        let repo_url = format!("https://api.github.com/repos/{owner_repo}");
+        let repo_url = self.api_repo_url(owner_repo);
         let repo_resp = self.send_with_retry(repo_url.as_str()).await?;
         if !repo_resp.status().is_success() {
             return Err(Self::status_error(repo_url.as_str(), repo_resp.status()));
@@ -136,7 +172,7 @@ impl GitHubFetcher {
 
         for candidate in &req.candidates {
             tried.push(candidate.clone());
-            let url = format!("https://raw.githubusercontent.com/{repo}/{git_ref}/{candidate}");
+            let url = self.raw_file_url(repo, git_ref, candidate);
             let res = self.send_with_retry(url.as_str()).await?;
 
             if res.status() == StatusCode::NOT_FOUND {
@@ -248,5 +284,31 @@ impl GitHubFetcher {
                 status: status.as_u16(),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GitHubFetcher;
+
+    #[test]
+    fn builds_api_and_raw_urls_from_overridden_base_urls() {
+        let fetcher = GitHubFetcher::with_base_urls(
+            "http://localhost:18080/api".to_string(),
+            "http://localhost:18080/raw".to_string(),
+        );
+
+        assert_eq!(
+            fetcher.api_tag_url("owner/repo", "v1.2.3"),
+            "http://localhost:18080/api/repos/owner/repo/git/ref/tags/v1.2.3"
+        );
+        assert_eq!(
+            fetcher.api_repo_url("owner/repo"),
+            "http://localhost:18080/api/repos/owner/repo"
+        );
+        assert_eq!(
+            fetcher.raw_file_url("owner/repo", "main", "README.md"),
+            "http://localhost:18080/raw/owner/repo/main/README.md"
+        );
     }
 }
