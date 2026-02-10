@@ -2,6 +2,7 @@ mod config;
 mod error;
 mod fetcher;
 mod resolver;
+mod status;
 
 use std::path::PathBuf;
 
@@ -12,6 +13,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::fetcher::GitHubFetcher;
 use crate::resolver::LockResolver;
+use crate::status::{collect_status_rows, print_status_table};
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -141,16 +143,21 @@ async fn run() -> Result<()> {
             }
         }
         Commands::Status => {
-            let statuses = status::collect_status()?;
-            status::print_status(&statuses);
-        }
-        Commands::Check => {
-            let statuses = status::collect_status()?;
-            status::print_check(&statuses);
+            let config_path = PathBuf::from("ai-fdocs.toml");
+            let config = match Config::load(&config_path) {
+                Ok(config) => config,
+                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
+                    print_config_example();
+                    return Ok(());
+                }
+                Err(err) => return Err(err),
+            };
 
-            if !status::is_healthy(&statuses) {
-                std::process::exit(1);
-            }
+            let lock_path = PathBuf::from("Cargo.lock");
+            let locked_versions = LockResolver::resolve(&lock_path)?;
+
+            let rows = collect_status_rows(&config, &locked_versions);
+            print_status_table(&rows);
         }
     }
 
