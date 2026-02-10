@@ -11,7 +11,7 @@ pub struct Config {
     pub settings: Settings,
 
     #[serde(default)]
-    pub crates: HashMap<String, CrateConfig>,
+    pub crates: HashMap<String, CrateDoc>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,20 +27,22 @@ pub struct Settings {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CrateConfig {
-    /// Source definitions (at least one is required).
-    #[serde(default)]
-    pub sources: Vec<CrateSource>,
+pub struct CrateDoc {
+    pub sources: Vec<Source>,
 
-    /// Optional: Explicit list of files to fetch.
-    /// Paths are relative to repo root.
-    pub files: Option<Vec<String>>,
-
-    /// Instructions for AI (goes into _INDEX.md)
     #[serde(default)]
-    pub include_migration_guide: bool,
-    #[serde(default = "default_true")]
-    pub prune: bool,
+    pub ai_notes: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Source {
+    GitHub {
+        repo: String,
+        #[serde(default)]
+        files: Vec<String>,
+    },
+    DocsRs,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,7 +59,7 @@ pub enum SourceType {
 }
 
 fn default_output_dir() -> PathBuf {
-    PathBuf::from("docs/ai/vendor-docs/rust")
+    PathBuf::from("docs/ai/vendor-docs")
 }
 
 fn default_max_file_size_kb() -> usize {
@@ -83,6 +85,7 @@ impl Config {
         if !path.exists() {
             return Err(AiDocsError::ConfigNotFound(path.to_path_buf()));
         }
+
         let content = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
         config.validate()?;
