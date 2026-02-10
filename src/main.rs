@@ -326,6 +326,34 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
+fn emit_check_failures_for_ci(statuses: &[crate::status::CrateStatus]) {
+    let github_actions = std::env::var("GITHUB_ACTIONS")
+        .ok()
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    for status in statuses
+        .iter()
+        .filter(|s| !matches!(s.status, DocsStatus::Synced | DocsStatus::SyncedFallback))
+    {
+        if github_actions {
+            eprintln!(
+                "::error title=ai-fdocs check::{} [{}] {}",
+                status.crate_name,
+                status.status.as_str(),
+                status.reason
+            );
+        } else {
+            eprintln!(
+                "[ai-fdocs check] {} [{}] {}",
+                status.crate_name,
+                status.status.as_str(),
+                status.reason
+            );
+        }
+    }
+}
+
 fn run_status(config_path: &PathBuf) -> Result<()> {
     let config = Config::load(config_path)?;
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
@@ -349,8 +377,10 @@ fn run_check(config_path: &PathBuf) -> Result<()> {
 
     if failing {
         print_status_table(&statuses);
+        emit_check_failures_for_ci(&statuses);
         return Err(error::AiDocsError::Other(
-            "Documentation is outdated or missing. Run: cargo ai-fdocs sync".to_string(),
+            "Documentation is outdated, missing, or corrupted. Run: cargo ai-fdocs sync"
+                .to_string(),
         ));
     }
 

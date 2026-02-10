@@ -16,7 +16,7 @@ pub enum DocsStatus {
 }
 
 impl DocsStatus {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Synced => "Synced",
             Self::SyncedFallback => "SyncedFallback",

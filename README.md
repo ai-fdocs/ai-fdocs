@@ -127,6 +127,9 @@ backward compatibility, but new configs should use `repo`.
 
 ## Practical AI integration
 
+In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Actions they are additionally emitted as `::error` annotations.
+
+
 For Cursor-like tools, point instructions to:
 - `docs/ai/vendor-docs/rust/_INDEX.md` first,
 - then the crate folder matching the current lockfile version.
