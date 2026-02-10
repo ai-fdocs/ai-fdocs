@@ -27,6 +27,14 @@ Alignment policy for `npn/`:
 - same output layout principles (`_INDEX.md`, per-package folders, metadata);
 - same cache/status semantics where possible, adapted for npm packages.
 
+
+## Подробная техническая документация
+
+См. папку [`docs/architecture`](./docs/architecture):
+
+- [Основной Rust-модуль](./docs/architecture/rust-module.md)
+- [NPM-клон](./docs/architecture/npm-clone.md)
+
 ## Why this exists
 
 In practice, many AI coding failures happen not because the model cannot reason,
