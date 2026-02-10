@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod fetcher;
+mod index;
 mod processor;
 mod resolver;
 mod storage;
@@ -11,8 +12,6 @@ use tracing::{error, info, warn};
 
 use crate::config::{Config, Source};
 use crate::fetcher::github::GitHubFetcher;
-use crate::processor::changelog::trim_changelog;
-use crate::storage::{Ecosystem, ResolvedCrate};
 
 #[derive(Parser)]
 #[command(
@@ -30,6 +29,8 @@ enum Commands {
     Sync {
         #[arg(short, long, default_value = "ai-docs.toml")]
         config: PathBuf,
+        #[arg(long, default_value_t = false)]
+        force: bool,
     },
     /// Show which docs are outdated vs lock files
     Status {
@@ -38,11 +39,18 @@ enum Commands {
     },
 }
 
+#[derive(Default)]
+struct SyncStats {
+    synced: usize,
+    cached: usize,
+    skipped: usize,
+    errors: usize,
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // cargo subcommand передаёт "ai-docs" как первый аргумент — пропускаем
     let args: Vec<String> = std::env::args()
         .enumerate()
         .filter(|(i, arg)| !(*i == 1 && arg == "ai-docs"))
@@ -52,8 +60,8 @@ async fn main() {
     let cli = Cli::parse_from(args);
 
     match cli.command {
-        Commands::Sync { config } => {
-            if let Err(e) = run_sync(&config).await {
+        Commands::Sync { config, force } => {
+            if let Err(e) = run_sync(&config, force).await {
                 error!("Sync failed: {e}");
                 std::process::exit(1);
             }
@@ -67,11 +75,10 @@ async fn main() {
     }
 }
 
-async fn run_sync(config_path: &PathBuf) -> error::Result<()> {
+async fn run_sync(config_path: &PathBuf, force: bool) -> error::Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
 
-    // Резолвим версии из Cargo.lock
     let cargo_lock_path = PathBuf::from("Cargo.lock");
     let rust_versions = if cargo_lock_path.exists() {
         resolver::resolve_cargo_versions(&cargo_lock_path)?
@@ -80,43 +87,86 @@ async fn run_sync(config_path: &PathBuf) -> error::Result<()> {
         std::collections::HashMap::new()
     };
 
-    let fetcher = GitHubFetcher::new();
-    let mut resolved_crates = Vec::new();
+    let rust_output_dir = storage::rust_output_dir(&config.settings.output_dir);
+    if config.settings.prune {
+        storage::prune(&rust_output_dir, &config, &rust_versions)?;
+    }
 
-    // Обрабатываем Rust-крейты
+    let fetcher = GitHubFetcher::new();
+    let mut saved_crates = Vec::new();
+    let mut stats = SyncStats::default();
+
     for (crate_name, crate_doc) in &config.crates {
-        let version = match rust_versions.get(crate_name.as_str()) {
-            Some(v) => v.clone(),
-            None => {
-                warn!("Crate '{crate_name}' not found in Cargo.lock, skipping");
-                continue;
-            }
+        let Some(version) = rust_versions.get(crate_name.as_str()).cloned() else {
+            warn!("Crate '{crate_name}' not found in Cargo.lock, skipping");
+            stats.skipped += 1;
+            continue;
         };
+
+        if !force && storage::is_cached(&rust_output_dir, crate_name, &version) {
+            info!("  ⏭ {crate_name}@{version}: cached, skipping");
+            if let Some(saved) =
+                storage::read_cached_info(&rust_output_dir, crate_name, &version, crate_doc)
+            {
+                saved_crates.push(saved);
+            }
+            stats.cached += 1;
+            continue;
+        }
 
         info!("Syncing {crate_name}@{version}...");
 
-        let mut all_files = Vec::new();
+        let mut crate_saved: Option<storage::SavedCrate> = None;
 
         for source in &crate_doc.sources {
             match source {
                 Source::GitHub { repo, files } => {
-                    let results = fetcher.fetch_crate_files(repo, &version, files).await;
+                    let resolved = match fetcher.resolve_ref(repo, &version).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("  ✗ failed to resolve ref: {e}");
+                            stats.errors += 1;
+                            continue;
+                        }
+                    };
 
-                    for result in results {
-                        match result {
-                            Ok(mut file) => {
-                                // Обрезаем CHANGELOG
-                                if file.filename.to_uppercase().contains("CHANGELOG") {
-                                    file.content = trim_changelog(&file.content, &version);
-                                }
-                                info!("  ✓ {}", file.filename);
-                                all_files.push(file);
-                            }
+                    if resolved.is_fallback {
+                        warn!(
+                            "  ⚠ no exact tag for {crate_name}@{version}, using {}",
+                            resolved.git_ref
+                        );
+                    }
+
+                    let results = fetcher.fetch_files(repo, &resolved.git_ref, files).await;
+                    let fetched_files: Vec<_> = results
+                        .into_iter()
+                        .filter_map(|r| match r {
+                            Ok(file) => Some(file),
                             Err(e) => {
                                 warn!("  ✗ {e}");
+                                None
                             }
-                        }
+                        })
+                        .collect();
+
+                    if fetched_files.is_empty() {
+                        warn!("  ✗ no files fetched for {crate_name}@{version}");
+                        stats.errors += 1;
+                        continue;
                     }
+
+                    let saved = storage::save_crate_files(
+                        &rust_output_dir,
+                        crate_name,
+                        &version,
+                        repo,
+                        &resolved,
+                        &fetched_files,
+                        crate_doc,
+                        config.settings.max_file_size_kb,
+                    )?;
+                    crate_saved = Some(saved);
+                    break;
                 }
                 Source::DocsRs => {
                     info!("  ⏭ docs.rs source skipped (not implemented in MVP)");
@@ -124,26 +174,19 @@ async fn run_sync(config_path: &PathBuf) -> error::Result<()> {
             }
         }
 
-        resolved_crates.push(ResolvedCrate {
-            name: crate_name.clone(),
-            version,
-            ai_notes: crate_doc.ai_notes.clone(),
-            files: all_files,
-            ecosystem: Ecosystem::Rust,
-        });
+        if let Some(saved) = crate_saved {
+            saved_crates.push(saved);
+            stats.synced += 1;
+        } else {
+            stats.skipped += 1;
+        }
     }
 
-    // Записываем всё на диск
-    storage::write_all(
-        &config.settings.output_dir,
-        &resolved_crates,
-        config.settings.max_file_size_kb,
-    )?;
+    index::generate_index(&rust_output_dir, &saved_crates)?;
 
     info!(
-        "✅ Synced {} crates to {}",
-        resolved_crates.len(),
-        config.settings.output_dir.display()
+        "✅ Sync complete: {} synced, {} cached, {} skipped, {} errors",
+        stats.synced, stats.cached, stats.skipped, stats.errors
     );
 
     Ok(())
@@ -159,7 +202,7 @@ async fn run_status(config_path: &PathBuf) -> error::Result<()> {
         std::collections::HashMap::new()
     };
 
-    let output_dir = &config.settings.output_dir;
+    let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
 
     println!("Dependency Status:");
     println!("{:-<60}", "");
@@ -170,21 +213,14 @@ async fn run_status(config_path: &PathBuf) -> error::Result<()> {
             .cloned()
             .unwrap_or_else(|| "???".to_string());
 
-        // Проверяем, есть ли папка с этой версией
-        let crate_dir = output_dir
-            .join("rust")
-            .join(format!("{crate_name}@{lock_version}"));
+        let crate_dir = rust_dir.join(format!("{crate_name}@{lock_version}"));
 
         let status = if crate_dir.exists() {
             "✅ OK".to_string()
         } else {
-            // Может есть другая версия?
-            let rust_dir = output_dir.join("rust");
             let existing = find_existing_version(&rust_dir, crate_name);
             match existing {
-                Some(old_ver) => {
-                    format!("⚠️  OUTDATED ({old_ver} → {lock_version})")
-                }
+                Some(old_ver) => format!("⚠️  OUTDATED ({old_ver} → {lock_version})"),
                 None => "❌ MISSING".to_string(),
             }
         };

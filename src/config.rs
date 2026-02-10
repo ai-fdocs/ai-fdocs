@@ -25,6 +25,8 @@ pub struct Settings {
     pub include_readme: bool,
     #[serde(default)]
     pub include_migration_guide: bool,
+    #[serde(default = "default_true")]
+    pub prune: bool,
 }
 
 fn default_output_dir() -> PathBuf {

@@ -1,7 +1,19 @@
 use reqwest::StatusCode;
 
 use crate::error::{AiDocsError, Result};
-use crate::storage::ResolvedFile;
+
+#[derive(Debug, Clone)]
+pub struct ResolvedRef {
+    pub git_ref: String,
+    pub is_fallback: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FetchedFile {
+    pub path: String,
+    pub source_url: String,
+    pub content: String,
+}
 
 pub struct GitHubFetcher {
     client: reqwest::Client,
@@ -32,42 +44,17 @@ impl GitHubFetcher {
         Self { client }
     }
 
-    pub async fn fetch_crate_files(
-        &self,
-        repo: &str,
-        version: &str,
-        files: &[String],
-    ) -> Vec<Result<ResolvedFile>> {
-        let file_list: Vec<String> = if files.is_empty() {
-            vec!["README.md".to_string(), "CHANGELOG.md".to_string()]
-        } else {
-            files.to_vec()
-        };
-
-        let mut out = Vec::with_capacity(file_list.len());
-        for path in file_list {
-            out.push(self.fetch_file(repo, version, &path).await);
-        }
-        out
-    }
-
-    async fn fetch_file(&self, repo: &str, version: &str, path: &str) -> Result<ResolvedFile> {
+    pub async fn resolve_ref(&self, repo: &str, version: &str) -> Result<ResolvedRef> {
         let repo_name = repo.rsplit('/').next().unwrap_or(repo);
-        let tags = vec![
+        let candidates = vec![
             format!("v{version}"),
             version.to_string(),
             format!("{repo_name}-v{version}"),
             format!("{repo_name}-{version}"),
-            "main".to_string(),
-            "master".to_string(),
         ];
 
-        let mut tried = Vec::new();
-
-        for tag in tags {
-            let url = format!("https://raw.githubusercontent.com/{repo}/{tag}/{path}");
-            tried.push(tag.clone());
-
+        for git_ref in candidates {
+            let url = format!("https://raw.githubusercontent.com/{repo}/{git_ref}/README.md");
             let response =
                 self.client
                     .get(&url)
@@ -78,35 +65,94 @@ impl GitHubFetcher {
                         source,
                     })?;
 
-            if response.status() == StatusCode::NOT_FOUND {
-                continue;
+            if response.status().is_success() {
+                return Ok(ResolvedRef {
+                    git_ref,
+                    is_fallback: false,
+                });
             }
+        }
 
-            if !response.status().is_success() {
-                return Err(AiDocsError::Other(format!(
-                    "Unexpected status {} for {}",
-                    response.status(),
-                    url
-                )));
+        for fallback in ["main", "master"] {
+            let url = format!("https://raw.githubusercontent.com/{repo}/{fallback}/README.md");
+            let response =
+                self.client
+                    .get(&url)
+                    .send()
+                    .await
+                    .map_err(|source| AiDocsError::Fetch {
+                        url: url.clone(),
+                        source,
+                    })?;
+            if response.status().is_success() {
+                return Ok(ResolvedRef {
+                    git_ref: fallback.to_string(),
+                    is_fallback: true,
+                });
             }
+        }
 
-            let content = response.text().await.map_err(|source| AiDocsError::Fetch {
+        Err(AiDocsError::Other(format!(
+            "Could not resolve git ref for {repo}@{version}"
+        )))
+    }
+
+    pub async fn fetch_files(
+        &self,
+        repo: &str,
+        git_ref: &str,
+        files: &[String],
+    ) -> Vec<Result<FetchedFile>> {
+        let file_list: Vec<String> = if files.is_empty() {
+            vec!["README.md".to_string(), "CHANGELOG.md".to_string()]
+        } else {
+            files.to_vec()
+        };
+
+        let mut out = Vec::with_capacity(file_list.len());
+        for path in file_list {
+            out.push(self.fetch_file(repo, git_ref, &path).await);
+        }
+        out
+    }
+
+    async fn fetch_file(&self, repo: &str, git_ref: &str, path: &str) -> Result<FetchedFile> {
+        let url = format!("https://raw.githubusercontent.com/{repo}/{git_ref}/{path}");
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|source| AiDocsError::Fetch {
                 url: url.clone(),
                 source,
             })?;
 
-            return Ok(ResolvedFile {
-                filename: path.replace('/', "__"),
-                source_path: path.to_string(),
-                source_url: url,
-                content,
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(AiDocsError::GitHubFileNotFound {
+                repo: repo.to_string(),
+                path: path.to_string(),
+                tried_tags: vec![git_ref.to_string()],
             });
         }
 
-        Err(AiDocsError::GitHubFileNotFound {
-            repo: repo.to_string(),
+        if !response.status().is_success() {
+            return Err(AiDocsError::Other(format!(
+                "Unexpected status {} for {}",
+                response.status(),
+                url
+            )));
+        }
+
+        let content = response.text().await.map_err(|source| AiDocsError::Fetch {
+            url: url.clone(),
+            source,
+        })?;
+
+        Ok(FetchedFile {
             path: path.to_string(),
-            tried_tags: tried,
+            source_url: url,
+            content,
         })
     }
 }
