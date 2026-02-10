@@ -1,6 +1,8 @@
 mod config;
 mod error;
 mod fetcher;
+mod index;
+mod processor;
 mod resolver;
 mod status;
 
@@ -9,11 +11,10 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
 
-use crate::config::Config;
+use crate::config::{Config, SourceType};
 use crate::error::Result;
 use crate::fetcher::GitHubFetcher;
 use crate::resolver::LockResolver;
-use crate::status::{collect_status, print_status_table};
 
 #[derive(Parser)]
 #[command(name = "cargo-ai-fdocs")]
@@ -32,11 +33,26 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Sync {
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "ai-docs.toml")]
+        config: PathBuf,
+        #[arg(long, default_value_t = false)]
         force: bool,
+    },
+    /// Show which docs are outdated vs lock files
+    Status {
+        #[arg(short, long, default_value = "ai-docs.toml")]
+        config: PathBuf,
     },
     Status,
     Check,
+}
+
+#[derive(Default)]
+struct SyncStats {
+    synced: usize,
+    cached: usize,
+    skipped: usize,
+    errors: usize,
 }
 
 #[tokio::main]
@@ -48,56 +64,71 @@ async fn main() {
         )
         .init();
 
-    if let Err(e) = run().await {
-        error!("Fatal error: {e}");
-        std::process::exit(1);
-    }
-}
+    let args: Vec<String> = std::env::args()
+        .enumerate()
+        .filter(|(i, arg)| !(*i == 1 && arg == "ai-docs"))
+        .map(|(_, arg)| arg)
+        .collect();
 
 async fn run() -> Result<()> {
     let CargoCli::AiFdocs(cli) = CargoCli::parse();
 
     match cli.command {
-        Commands::Sync { force } => {
-            info!("Starting sync... (force={force})");
-
-            let config_path = PathBuf::from("ai-fdocs.toml");
-            let config = match Config::load(&config_path) {
-                Ok(config) => config,
-                Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
-                    print_config_example();
-                    return Ok(());
-                }
-                Err(err) => return Err(err),
-            };
-            info!(
-                "Config loaded. Processing {} crates...",
-                config.crates.len()
-            );
-            info!(
-                "Settings: output_dir='{}', max_file_size_kb={}, prune={}",
-                config.settings.output_dir.display(),
-                config.settings.max_file_size_kb,
-                config.settings.prune
-            );
-
-            let lock_path = PathBuf::from("Cargo.lock");
-            let locked_versions = LockResolver::resolve(&lock_path)?;
-            info!(
-                "Cargo.lock parsed. Found {} packages.",
-                locked_versions.len()
-            );
-
-            let fetcher = GitHubFetcher::new()?;
-            if fetcher.token_present {
-                info!("GitHub token detected.");
+        Commands::Sync { config, force } => {
+            if let Err(e) = run_sync(&config, force).await {
+                error!("Sync failed: {e}");
+                std::process::exit(1);
             }
+        }
+        Commands::Status { config } => {
+            if let Err(e) = run_status(&config).await {
+                error!("Status check failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+}
 
-            for (name, crate_cfg) in &config.crates {
-                info!("Processing crate: {name}");
-                if !crate_cfg.ai_notes.is_empty() {
-                    info!("  AI notes configured ({} chars)", crate_cfg.ai_notes.len());
-                }
+async fn run_sync(config_path: &PathBuf, force: bool) -> error::Result<()> {
+    let config = Config::load(config_path)?;
+    info!("Loaded config from {}", config_path.display());
+
+    let cargo_lock_path = PathBuf::from("Cargo.lock");
+    let rust_versions = if cargo_lock_path.exists() {
+        resolver::resolve_cargo_versions(&cargo_lock_path)?
+    } else {
+        warn!("Cargo.lock not found, skipping Rust dependencies");
+        std::collections::HashMap::new()
+    };
+
+    let rust_output_dir = storage::rust_output_dir(&config.settings.output_dir);
+    if config.settings.prune {
+        storage::prune(&rust_output_dir, &config, &rust_versions)?;
+    }
+
+    let fetcher = GitHubFetcher::new();
+    let mut saved_crates = Vec::new();
+    let mut stats = SyncStats::default();
+
+    for (crate_name, crate_doc) in &config.crates {
+        let Some(version) = rust_versions.get(crate_name.as_str()).cloned() else {
+            warn!("Crate '{crate_name}' not found in Cargo.lock, skipping");
+            stats.skipped += 1;
+            continue;
+        };
+
+        if !force && storage::is_cached(&rust_output_dir, crate_name, &version) {
+            info!("  ⏭ {crate_name}@{version}: cached, skipping");
+            if let Some(saved) =
+                storage::read_cached_info(&rust_output_dir, crate_name, &version, crate_doc)
+            {
+                saved_crates.push(saved);
+            }
+            stats.cached += 1;
+            continue;
+        }
+
+        info!("Syncing {crate_name}@{version}...");
 
                 let Some(version) = locked_versions.get(name) else {
                     warn!("Crate '{name}' not found in Cargo.lock. Skipping.");
@@ -105,7 +136,18 @@ async fn run() -> Result<()> {
                 };
                 info!("  Locked version: {version}");
 
-                let resolved = fetcher.resolve_ref(&crate_cfg.repo, name, version).await?;
+                let Some(github_source) = crate_cfg
+                    .sources
+                    .iter()
+                    .find(|source| source.source_type == SourceType::Github)
+                else {
+                    warn!("  ❌ no source with type='github' configured. Skipping.");
+                    continue;
+                };
+
+                let resolved = fetcher
+                    .resolve_ref(&github_source.repo, name, version)
+                    .await?;
                 if resolved.is_fallback {
                     warn!("  ⚠ Fallback to branch: {}", resolved.git_ref);
                 } else {
@@ -116,7 +158,7 @@ async fn run() -> Result<()> {
                     info!("  Explicit files configured: {}", paths.len());
                     for path in paths {
                         match fetcher
-                            .fetch_file(&crate_cfg.repo, &resolved.git_ref, path)
+                            .fetch_file(&github_source.repo, &resolved.git_ref, path)
                             .await?
                         {
                             Some(content) => {
@@ -126,19 +168,29 @@ async fn run() -> Result<()> {
                         }
                     }
                 } else {
-                    let readme_path = if let Some(sub) = &crate_cfg.subpath {
-                        format!("{sub}/README.md")
-                    } else {
-                        "README.md".to_string()
-                    };
-
                     match fetcher
-                        .fetch_file(&crate_cfg.repo, &resolved.git_ref, &readme_path)
+                        .fetch_file(&github_source.repo, &resolved.git_ref, "README.md")
                         .await?
                     {
                         Some(content) => info!("  ✅ README.md fetched ({} bytes)", content.len()),
-                        None => warn!("  ❌ README.md not found at {readme_path}"),
+                        None => warn!("  ❌ README.md not found at README.md"),
                     }
+
+                    let saved = storage::save_crate_files(
+                        &rust_output_dir,
+                        crate_name,
+                        &version,
+                        repo,
+                        &resolved,
+                        &fetched_files,
+                        crate_doc,
+                        config.settings.max_file_size_kb,
+                    )?;
+                    crate_saved = Some(saved);
+                    break;
+                }
+                Source::DocsRs => {
+                    info!("  ⏭ docs.rs source skipped (not implemented in MVP)");
                 }
             }
         }
@@ -153,34 +205,29 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
-fn run_status() -> Result<()> {
-    let config_path = PathBuf::from("ai-fdocs.toml");
-    let config = match Config::load(&config_path) {
-        Ok(config) => config,
-        Err(crate::error::AiDocsError::ConfigNotFound(_)) => {
-            print_config_example();
-            return Ok(());
+        if let Some(saved) = crate_saved {
+            saved_crates.push(saved);
+            stats.synced += 1;
+        } else {
+            stats.skipped += 1;
         }
-        Err(err) => return Err(err),
-    };
+    }
 
-    let lock_path = PathBuf::from("Cargo.lock");
-    let lock_versions = LockResolver::resolve(&lock_path)?;
+    index::generate_index(&rust_output_dir, &saved_crates)?;
 
-    let statuses = collect_status(&config, &lock_versions, &config.settings.output_dir);
-    print_status_table(&statuses);
-
-    Ok(())
-}
+    info!(
+        "✅ Sync complete: {} synced, {} cached, {} skipped, {} errors",
+        stats.synced, stats.cached, stats.skipped, stats.errors
+    );
 
 fn print_config_example() {
     eprintln!("ai-fdocs.toml not found. Create one in your project root.");
     eprintln!();
     eprintln!("Example:");
     eprintln!("[crates.axum]");
-    eprintln!("repo = \"tokio-rs/axum\"");
+    eprintln!("sources = [{{ type = \"github\", repo = \"tokio-rs/axum\" }}]");
     eprintln!();
     eprintln!("[crates.serde]");
-    eprintln!("repo = \"serde-rs/serde\"");
+    eprintln!("sources = [{{ type = \"github\", repo = \"serde-rs/serde\" }}]");
     eprintln!("ai_notes = \"Use derive macros for serialization.\"");
 }

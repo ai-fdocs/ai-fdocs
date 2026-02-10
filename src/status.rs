@@ -16,35 +16,32 @@ pub enum DocsStatus {
     Corrupted,
 }
 
-impl fmt::Display for DocsStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let text = match self {
-            DocsStatus::Synced => "Synced",
-            DocsStatus::SyncedFallback => "SyncedFallback",
-            DocsStatus::Outdated => "Outdated",
-            DocsStatus::Missing => "Missing",
-            DocsStatus::Corrupted => "Corrupted",
-        };
-
-        f.write_str(text)
+impl DocsStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Synced => "Synced",
+            Self::SyncedFallback => "SyncedFallback",
+            Self::Outdated => "Outdated",
+            Self::Missing => "Missing",
+            Self::Corrupted => "Corrupted",
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrateStatus {
-    pub name: String,
+    pub crate_name: String,
     pub lock_version: Option<String>,
+    pub docs_version: Option<String>,
     pub status: DocsStatus,
 }
 
 #[derive(Debug, Deserialize)]
 struct MetaFile {
-    #[serde(default)]
-    is_fallback: bool,
-    #[serde(default)]
-    used_fallback: bool,
-    #[serde(default)]
-    fallback: bool,
+    lock_version: Option<String>,
+    version: Option<String>,
+    is_fallback: Option<bool>,
+    fallback: Option<bool>,
 }
 
 pub fn collect_status(
@@ -52,17 +49,37 @@ pub fn collect_status(
     lock_versions: &HashMap<String, String>,
     output_dir: &Path,
 ) -> Vec<CrateStatus> {
-    let mut statuses = Vec::new();
+    let mut crate_names: Vec<_> = config.crates.keys().cloned().collect();
+    crate_names.sort();
 
-    for crate_name in config.crates.keys() {
-        let status = match lock_versions.get(crate_name) {
-            Some(version) => {
-                let expected_dir = output_dir.join(format!("{crate_name}@{version}"));
-                if expected_dir.is_dir() {
-                    classify_expected_dir(&expected_dir)
+    crate_names
+        .into_iter()
+        .map(|crate_name| {
+            let Some(lock_version) = lock_versions.get(&crate_name).cloned() else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: None,
+                    docs_version: None,
+                    status: DocsStatus::Missing,
+                };
+            };
+
+            let expected_dir = output_dir.join(format!("{crate_name}@{lock_version}"));
+
+            if !expected_dir.is_dir() {
+                let docs_version = discover_existing_version(output_dir, &crate_name);
+                let status = if docs_version.is_some() {
+                    DocsStatus::Outdated
                 } else {
-                    classify_unexpected_dirs(output_dir, crate_name)
-                }
+                    DocsStatus::Missing
+                };
+
+                return CrateStatus {
+                    crate_name,
+                    lock_version: Some(lock_version),
+                    docs_version,
+                    status,
+                };
             }
             None => classify_unexpected_dirs(output_dir, crate_name),
         };
@@ -156,68 +173,111 @@ fn summarize(statuses: &[CrateStatus]) -> StatusSummary {
     summary
 }
 
-fn classify_expected_dir(crate_dir: &Path) -> DocsStatus {
-    let meta_path = crate_dir.join(".aifd-meta.toml");
-    if !meta_path.is_file() {
-        return DocsStatus::Corrupted;
-    }
+            let meta_path = expected_dir.join(".aifd-meta.toml");
+            let Ok(meta_raw) = std::fs::read_to_string(&meta_path) else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: Some(lock_version.clone()),
+                    docs_version: Some(lock_version),
+                    status: DocsStatus::Corrupted,
+                };
+            };
 
-    match parse_meta_fallback_flag(&meta_path) {
-        Some(true) => DocsStatus::SyncedFallback,
-        Some(false) => DocsStatus::Synced,
-        None => DocsStatus::Corrupted,
-    }
-}
+            let Ok(meta) = toml::from_str::<MetaFile>(&meta_raw) else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: Some(lock_version.clone()),
+                    docs_version: Some(lock_version),
+                    status: DocsStatus::Corrupted,
+                };
+            };
 
-fn classify_unexpected_dirs(output_dir: &Path, crate_name: &str) -> DocsStatus {
-    let mut has_any_dir = false;
-
-    for crate_dir in find_crate_dirs(output_dir, crate_name) {
-        has_any_dir = true;
-
-        let meta_path = crate_dir.join(".aifd-meta.toml");
-        if !meta_path.is_file() || parse_meta_fallback_flag(&meta_path).is_none() {
-            return DocsStatus::Corrupted;
-        }
-    }
-
-    if has_any_dir {
-        DocsStatus::Outdated
-    } else {
-        DocsStatus::Missing
-    }
-}
-
-fn find_crate_dirs(output_dir: &Path, crate_name: &str) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(output_dir) else {
-        return Vec::new();
-    };
-
-    let prefix = format!("{crate_name}@");
-    entries
-        .filter_map(|entry| entry.ok())
-        .filter_map(|entry| {
-            let path = entry.path();
-            if !path.is_dir() {
-                return None;
-            }
-
-            let file_name = entry.file_name();
-            let name = file_name.to_string_lossy();
-            if name.starts_with(&prefix) {
-                Some(path)
+            let docs_version = meta
+                .version
+                .or(meta.lock_version)
+                .unwrap_or(lock_version.clone());
+            let status = if docs_version != lock_version {
+                DocsStatus::Outdated
+            } else if meta.is_fallback.or(meta.fallback).unwrap_or(false) {
+                DocsStatus::SyncedFallback
             } else {
-                None
+                DocsStatus::Synced
+            };
+
+            CrateStatus {
+                crate_name,
+                lock_version: Some(lock_version),
+                docs_version: Some(docs_version),
+                status,
             }
         })
         .collect()
 }
 
-fn parse_meta_fallback_flag(meta_path: &Path) -> Option<bool> {
-    let content = std::fs::read_to_string(meta_path).ok()?;
-    let meta: MetaFile = toml::from_str(&content).ok()?;
+fn discover_existing_version(output_dir: &Path, crate_name: &str) -> Option<String> {
+    let mut versions = Vec::new();
+    let prefix = format!("{crate_name}@");
 
-    Some(meta.is_fallback || meta.used_fallback || meta.fallback)
+    let Ok(entries) = std::fs::read_dir(output_dir) else {
+        return None;
+    };
+
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+
+        let dir_name = entry.file_name();
+        let dir_name = dir_name.to_string_lossy();
+        if let Some(version) = dir_name.strip_prefix(&prefix) {
+            versions.push(version.to_string());
+        }
+    }
+
+    versions.sort();
+    versions.pop()
+}
+
+pub fn print_status_table(statuses: &[CrateStatus]) {
+    let crate_col = statuses
+        .iter()
+        .map(|status| status.crate_name.len())
+        .max()
+        .unwrap_or(5)
+        .max("crate".len());
+
+    let lock_col = statuses
+        .iter()
+        .filter_map(|status| status.lock_version.as_ref().map(String::len))
+        .max()
+        .unwrap_or(4)
+        .max("lock".len());
+
+    let docs_col = statuses
+        .iter()
+        .filter_map(|status| status.docs_version.as_ref().map(String::len))
+        .max()
+        .unwrap_or(4)
+        .max("docs".len());
+
+    println!(
+        "{:<crate_col$}  {:<lock_col$}  {:<docs_col$}  status",
+        "crate", "lock", "docs"
+    );
+    println!(
+        "{:-<crate_col$}  {:-<lock_col$}  {:-<docs_col$}  {:-<6}",
+        "", "", "", ""
+    );
+
+    for status in statuses {
+        println!(
+            "{:<crate_col$}  {:<lock_col$}  {:<docs_col$}  {}",
+            status.crate_name,
+            status.lock_version.as_deref().unwrap_or("-"),
+            status.docs_version.as_deref().unwrap_or("-"),
+            status.status.as_str(),
+        );
+    }
 }
 
 #[cfg(test)]
