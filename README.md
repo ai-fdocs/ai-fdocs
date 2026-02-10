@@ -1,6 +1,6 @@
 # cargo-ai-fdocs
 
-**Version-locked documentation for AI coding assistants.**
+**AI Fresh Docs (Rust CLI): version-locked documentation for AI coding assistants.**
 
 `cargo-ai-fdocs` helps close the knowledge gap between AI training data and the
 exact dependency versions used in your Rust project.
@@ -24,24 +24,25 @@ We treat this as an engineering hygiene problem:
 ## Current alpha scope (this repository)
 
 Implemented now:
-- parse project config (`ai-docs.toml`);
+- parse project config (`ai-fdocs.toml`);
 - resolve crate versions from `Cargo.lock`;
 - fetch docs from GitHub (including custom file lists);
 - cache per crate/version with metadata;
 - prune outdated crate folders;
 - generate global index (`_INDEX.md`);
-- show status of synced docs.
+- show status of synced docs;
+- continue sync when one crate/file fails (best-effort), reporting errors in итоговой статистике.
 
 Current commands:
 
 ```bash
-cargo ai-docs sync
-cargo ai-docs sync --force
-cargo ai-docs status
+cargo ai-fdocs sync
+cargo ai-fdocs sync --force
+cargo ai-fdocs status
 ```
 
 > Note: the package name is `cargo-ai-fdocs`, while the current alpha command
-> flow in this branch uses `cargo ai-docs ...`.
+> flow in this branch uses `cargo ai-fdocs ...`.
 
 ## Quick start
 
@@ -51,7 +52,7 @@ cargo ai-docs status
 cargo install cargo-ai-fdocs
 ```
 
-2. Create `ai-docs.toml`
+2. Create `ai-fdocs.toml`
 
 ```toml
 [settings]
@@ -72,7 +73,7 @@ ai_notes = "Prefer compile-time checked queries with sqlx::query!"
 3. Sync docs
 
 ```bash
-cargo ai-docs sync
+cargo ai-fdocs sync
 ```
 
 By default files are stored in:
@@ -101,7 +102,7 @@ docs/ai/vendor-docs/rust/
 
 ## Configuration reference
 
-`ai-docs.toml` supports:
+`ai-fdocs.toml` supports:
 
 - `[settings]`
   - `output_dir` (default: `docs/ai/vendor-docs/rust`)

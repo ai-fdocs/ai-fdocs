@@ -22,8 +22,6 @@ use crate::status::{collect_status, print_status_table, DocsStatus};
 #[command(name = "cargo-ai-fdocs")]
 #[command(bin_name = "cargo")]
 enum CargoCli {
-    #[command(name = "ai-docs")]
-    AiDocs(Cli),
     #[command(name = "ai-fdocs")]
     AiFdocs(Cli),
 }
@@ -70,12 +68,12 @@ async fn main() {
 
     let args: Vec<String> = std::env::args()
         .enumerate()
-        .filter(|(i, arg)| !(*i == 1 && (arg == "ai-docs" || arg == "ai-fdocs")))
+        .filter(|(i, arg)| !(*i == 1 && arg == "ai-fdocs"))
         .map(|(_, arg)| arg)
         .collect();
 
     let parse = CargoCli::try_parse_from(args).map(|parsed| match parsed {
-        CargoCli::AiDocs(cli) | CargoCli::AiFdocs(cli) => cli,
+        CargoCli::AiFdocs(cli) => cli,
     });
 
     let cli = match parse {
