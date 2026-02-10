@@ -25,6 +25,10 @@ impl DocsStatus {
             Self::Corrupted => "Corrupted",
         }
     }
+
+    fn is_problem(self) -> bool {
+        matches!(self, Self::Outdated | Self::Missing | Self::Corrupted)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +37,7 @@ pub struct CrateStatus {
     pub lock_version: Option<String>,
     pub docs_version: Option<String>,
     pub status: DocsStatus,
+    pub reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,16 +65,25 @@ pub fn collect_status(
                     lock_version: None,
                     docs_version: None,
                     status: DocsStatus::Missing,
+                    reason: "crate missing in Cargo.lock".to_string(),
                 };
             };
 
             let expected_dir = output_dir.join(format!("{crate_name}@{lock_version}"));
             if !expected_dir.is_dir() {
                 let docs_version = discover_existing_version(output_dir, &crate_name);
-                let status = if docs_version.is_some() {
-                    DocsStatus::Outdated
+                let (status, reason) = if let Some(existing) = docs_version.clone() {
+                    (
+                        DocsStatus::Outdated,
+                        format!(
+                            "cached docs version {existing} differs from lock version {lock_version}"
+                        ),
+                    )
                 } else {
-                    DocsStatus::Missing
+                    (
+                        DocsStatus::Missing,
+                        "no synced docs found for this crate".to_string(),
+                    )
                 };
 
                 return CrateStatus {
@@ -77,6 +91,7 @@ pub fn collect_status(
                     lock_version: Some(lock_version),
                     docs_version,
                     status,
+                    reason,
                 };
             }
 
@@ -87,6 +102,7 @@ pub fn collect_status(
                     lock_version: Some(lock_version.clone()),
                     docs_version: Some(lock_version),
                     status: DocsStatus::Corrupted,
+                    reason: ".aifd-meta.toml is missing or unreadable".to_string(),
                 };
             };
 
@@ -96,6 +112,7 @@ pub fn collect_status(
                     lock_version: Some(lock_version.clone()),
                     docs_version: Some(lock_version),
                     status: DocsStatus::Corrupted,
+                    reason: ".aifd-meta.toml has invalid TOML".to_string(),
                 };
             };
 
@@ -104,12 +121,20 @@ pub fn collect_status(
                 .or(meta.lock_version)
                 .unwrap_or_else(|| lock_version.clone());
 
-            let status = if docs_version != lock_version {
-                DocsStatus::Outdated
+            let (status, reason) = if docs_version != lock_version {
+                (
+                    DocsStatus::Outdated,
+                    format!(
+                        "metadata version {docs_version} differs from lock version {lock_version}"
+                    ),
+                )
             } else if meta.is_fallback.or(meta.fallback).unwrap_or(false) {
-                DocsStatus::SyncedFallback
+                (
+                    DocsStatus::SyncedFallback,
+                    "synced from fallback branch (no exact tag found)".to_string(),
+                )
             } else {
-                DocsStatus::Synced
+                (DocsStatus::Synced, "up to date".to_string())
             };
 
             CrateStatus {
@@ -117,6 +142,7 @@ pub fn collect_status(
                 lock_version: Some(lock_version),
                 docs_version: Some(docs_version),
                 status,
+                reason,
             }
         })
         .collect()
@@ -153,29 +179,33 @@ pub fn print_status_table(statuses: &[CrateStatus]) {
 fn format_status_table(statuses: &[CrateStatus]) -> String {
     const COL_CRATE: usize = 24;
     const COL_LOCK: usize = 16;
+    const COL_DOCS: usize = 16;
     const COL_STATUS: usize = 14;
 
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_STATUS$}",
-        "Crate", "Lock Version", "Docs Status"
+        "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$}",
+        "Crate", "Lock Version", "Docs Version", "Status"
     );
     let _ = writeln!(
         output,
-        "{:-<COL_CRATE$} {:-<COL_LOCK$} {:-<COL_STATUS$}",
-        "", "", ""
+        "{:-<COL_CRATE$} {:-<COL_LOCK$} {:-<COL_DOCS$} {:-<COL_STATUS$}",
+        "", "", "", ""
     );
 
     for item in statuses {
         let lock = item.lock_version.as_deref().unwrap_or("-");
+        let docs = item.docs_version.as_deref().unwrap_or("-");
         let _ = writeln!(
             output,
-            "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_STATUS$}",
+            "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$}",
             item.crate_name,
             lock,
+            docs,
             item.status.as_str(),
         );
+        let _ = writeln!(output, "  ↳ {}", item.reason);
     }
 
     let summary = summarize(statuses);
@@ -187,7 +217,25 @@ fn format_status_table(statuses: &[CrateStatus]) -> String {
     );
 
     if summary.has_problems() {
-        let _ = writeln!(output, "Hint: cargo ai-fdocs sync --force");
+        let _ = writeln!(
+            output,
+            "Hint: run `cargo ai-fdocs sync` (or `--force` for full refresh)"
+        );
+        let _ = writeln!(
+            output,
+            "CI hint: run `cargo ai-fdocs check` to fail on stale docs"
+        );
+
+        let _ = writeln!(output, "\nProblem details:");
+        for item in statuses.iter().filter(|s| s.status.is_problem()) {
+            let _ = writeln!(
+                output,
+                "- {} [{}]: {}",
+                item.crate_name,
+                item.status.as_str(),
+                item.reason
+            );
+        }
     }
 
     output
@@ -236,26 +284,29 @@ mod tests {
 
         assert!(table.contains("Crate"));
         assert!(table.contains("Lock Version"));
-        assert!(table.contains("Docs Status"));
+        assert!(table.contains("Docs Version"));
+        assert!(table.contains("Status"));
         assert!(table.contains("Total: 0 | Synced: 0 | Missing: 0 | Outdated: 0 | Corrupted: 0"));
-        assert!(!table.contains("Hint: cargo ai-fdocs sync --force"));
+        assert!(!table.contains("Hint: run `cargo ai-fdocs sync`"));
     }
 
     #[test]
-    fn formats_missing_lock_version_and_shows_hint_for_problems() {
+    fn formats_missing_lock_version_and_shows_hints_and_problem_details() {
         let statuses = vec![CrateStatus {
             crate_name: "serde".to_string(),
             lock_version: None,
             docs_version: None,
             status: DocsStatus::Missing,
+            reason: "crate missing in Cargo.lock".to_string(),
         }];
 
         let table = format_status_table(&statuses);
 
         assert!(table.contains("serde"));
-        assert!(table.contains("-"));
         assert!(table.contains("Missing"));
-        assert!(table.contains("Total: 1 | Synced: 0 | Missing: 1 | Outdated: 0 | Corrupted: 0"));
-        assert!(table.contains("Hint: cargo ai-fdocs sync --force"));
+        assert!(table.contains("crate missing in Cargo.lock"));
+        assert!(table.contains("Hint: run `cargo ai-fdocs sync`"));
+        assert!(table.contains("CI hint: run `cargo ai-fdocs check`"));
+        assert!(table.contains("Problem details:"));
     }
 }
