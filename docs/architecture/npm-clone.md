@@ -1,133 +1,133 @@
-# NPM-клон: `ai-fdocs` в `npn/` (Node.js/TypeScript)
+# NPM clone: `ai-fdocs` in `npn/` (Node.js/TypeScript)
 
-## 1) Назначение
+## 1) Purpose
 
-NPM-клон повторяет ключевую бизнес-логику Rust-версии для JavaScript/TypeScript экосистемы:
+The NPM clone mirrors core Rust-module behavior for the JavaScript/TypeScript ecosystem:
 
-- берёт зависимости из lockfile;
-- подтягивает документацию для конкретных версий пакетов;
-- складывает в локальный `vendor-docs/node`;
-- даёт команды `init/sync/status/check` для локальной работы и CI.
+- resolves dependencies from lockfiles;
+- fetches documentation for exact package versions;
+- stores docs in local `vendor-docs/node`;
+- provides `init/sync/status/check` for local workflows and CI.
 
 ---
 
-## 2) Архитектура и модули
+## 2) Architecture and modules
 
 ## CLI
 
-- `npn/src/cli.ts` — команды и централизованная обработка ошибок.
+- `npn/src/cli.ts` — command wiring and centralized error handling.
 
-## Команды
+## Commands
 
 - `npn/src/commands/init.ts`
 - `npn/src/commands/sync.ts`
 - `npn/src/commands/status.ts`
 - `npn/src/commands/check.ts`
 
-## Конфиг
+## Config
 
-- `npn/src/config.ts` — чтение `ai-fdocs.toml`.
+- `npn/src/config.ts` — `ai-fdocs.toml` loading.
 
-## Резолвер lockfile
+## Lockfile resolver
 
-- `npn/src/resolver.ts` — поддержка:
+- `npn/src/resolver.ts` — supports:
   - `package-lock.json`,
   - `pnpm-lock.yaml`,
   - `yarn.lock`.
 
-## Интеграции с внешними источниками
+## External source integrations
 
 - `npn/src/fetcher.ts`:
   - GitHub API / raw.githubusercontent.com;
-  - альтернативный режим fetch из npm tarball.
+  - optional docs fetch from npm tarballs.
 - `npn/src/registry.ts`:
   - npm registry metadata;
-  - извлечение GitHub repo и subpath.
+  - GitHub repo/subpath extraction.
 
-## Хранилище
+## Storage
 
 - `npn/src/storage.ts`:
-  - запись файлов/меты;
-  - кеш-проверка;
-  - prune.
+  - file/meta writes;
+  - cache checks;
+  - prune logic.
 
 ---
 
-## 3) Куда и как «стучится»
+## 3) External calls (where/how it calls)
 
 ## 3.1 `init`
 
-Для каждого кандидата из `package.json` (dependencies + devDependencies):
+For each candidate from `package.json` (dependencies + devDependencies):
 
 1. `GET https://registry.npmjs.org/{package}`
-2. Из поля `repository` извлекается GitHub-репо.
-3. Если есть `repository.directory`, сохраняется как `subpath`.
+2. Extract GitHub repo from `repository` field.
+3. If `repository.directory` exists, store as `subpath`.
 
-Особенности:
+Behavior details:
 
-- при HTTP `429` на metadata используется пауза `2 секунды`, затем **одна повторная попытка**;
-- если нет repo/не GitHub — пакет пропускается.
+- on HTTP `429` metadata response, waits `2 seconds` and retries once;
+- packages without repo / non-GitHub repo are skipped.
 
-## 3.2 `sync` в режиме GitHub (по умолчанию)
+## 3.2 `sync` in GitHub mode (default)
 
-Для каждого пакета из конфига:
+For each configured package:
 
-1. Резолв версии из lockfile.
-2. Проверка refs:
+1. Resolve version from lockfile.
+2. Probe refs:
    - `GET https://api.github.com/repos/{repo}/git/ref/heads/{ref}`
    - `GET https://api.github.com/repos/{repo}/git/ref/tags/{ref}`
-   - кандидаты: `v{version}`, `{version}`;
-   - fallback: `main`, затем `master`.
-3. Получение дерева репозитория:
+   - candidates: `v{version}`, `{version}`;
+   - fallback: `main`, then `master`.
+3. Fetch repository tree:
    - `GET https://api.github.com/repos/{repo}/git/trees/{ref}?recursive=1`
-4. Скачивание файлов:
+4. Download files:
    - `GET https://raw.githubusercontent.com/{repo}/{ref}/{path}`
 
-## 3.3 `sync` в режиме npm tarball (эксперимент)
+## 3.3 `sync` in npm tarball mode (experimental)
 
-Если `settings.experimental_npm_tarball = true`:
+If `settings.experimental_npm_tarball = true`:
 
-1. Запрос версии пакета:
+1. Resolve package version payload:
    - `GET https://registry.npmjs.org/{package}/{version}`
-2. Берётся `dist.tarball`.
-3. Скачивается tarball и распаковывается локально.
-4. Из архива выбираются docs-файлы по тем же правилам (или explicit `files`).
+2. Read `dist.tarball` URL.
+3. Download and unpack tarball locally.
+4. Select docs files by the same rules (or explicit `files`).
 
 ---
 
-## 4) Тайминги, интервалы и ограничения
+## 4) Timing, intervals, and limits
 
-## 4.1 Параллелизм
+## 4.1 Concurrency
 
-- В `sync` используется `p-limit`.
-- Жёсткий лимит: `MAX_CONCURRENT = 8` (константа в коде, не конфигурируется через TOML).
+- `sync` uses `p-limit`.
+- Hard cap: `MAX_CONCURRENT = 8` (code constant, not TOML-configurable).
 
-## 4.2 Временные паузы
+## 4.2 Delays/throttling
 
 - `init`:
-  - каждые 10 пакетов делается `sleep(50ms)` для более мягкой нагрузки;
-  - каждые 30 пакетов печатается прогресс.
+  - sleeps `50ms` every 10 packages to reduce request spikes;
+  - prints progress every 30 packages.
 - npm registry metadata:
-  - при `429` — `sleep(2000ms)` и один retry.
+  - on `429`, sleeps `2000ms` and retries once.
 
-## 4.3 Лимиты отбора файлов
+## 4.3 File selection limits
 
-- default режим выбирает md/docs/license/readme/changelog из дерева;
-- в обоих режимах итог ограничивается первыми **40** файлами.
+- default mode picks docs/readme/changelog/license markdown patterns from tree;
+- both modes cap output to first **40** files.
 
 ---
 
-## 5) Поведение команд
+## 5) Command behavior
 
 ## `ai-fdocs init [--overwrite]`
 
-Что делает:
+What it does:
 
-1. Проверяет наличие `ai-fdocs.toml`.
-2. Читает `package.json` (dependencies + devDependencies).
-3. Фильтрует служебные/шумные пакеты (например, `typescript`, `eslint`, `@types/*` и др.).
-4. Запрашивает npm registry metadata.
-5. Генерирует `ai-fdocs.toml`:
+1. Checks if `ai-fdocs.toml` already exists.
+2. Reads `package.json` (dependencies + devDependencies).
+3. Filters known low-signal packages (for example `typescript`, `eslint`, `@types/*`, etc.).
+4. Queries npm registry metadata.
+5. Generates `ai-fdocs.toml` with defaults:
    - `output_dir = "docs/ai/vendor-docs/node"`
    - `prune = true`
    - `max_file_size_kb = 512`
@@ -135,46 +135,46 @@ NPM-клон повторяет ключевую бизнес-логику Rust-
 
 ## `ai-fdocs sync [--force]`
 
-Что делает:
+What it does:
 
-1. Читает конфиг и lockfile.
-2. Если `prune=true`, очищает устаревшие каталоги.
-3. Для каждого пакета:
-   - `not in lockfile` => `skipped`;
-   - если валиден кеш и нет `--force` => `cached`;
-   - иначе скачивает docs (GitHub или tarball-режим);
-   - при успехе сохраняет файлы и мету;
-   - генерирует `_SUMMARY.md` для пакета.
-4. Генерирует общий индекс.
-5. Печатает статистику по категориям: synced/cached/skipped/errors.
+1. Loads config and lockfile.
+2. If `prune=true`, removes outdated package folders.
+3. Per package:
+   - if missing from lockfile => `skipped`;
+   - if valid cache and no `--force` => `cached`;
+   - otherwise fetches docs (GitHub or tarball mode);
+   - on success saves files + metadata;
+   - generates package `_SUMMARY.md`.
+4. Generates global index.
+5. Prints aggregate stats: synced/cached/skipped/errors.
 
 ## `ai-fdocs status`
 
-- Проверяет наличие директории и `.aifd-meta.toml`;
-- сверяет config hash;
-- показывает состояния:
+- Checks folder and `.aifd-meta.toml` presence;
+- validates config hash;
+- reports statuses:
   - `✅ Synced`
   - `⚠️ Synced (fallback: main/master)`
   - `⚠️ Config changed (resync needed)`
   - `❌ Missing`
   - `❌ Not in lockfile`
 
-Дополнительно:
+Additional output:
 
-- подсказка по `.gitattributes`;
-- статус GitHub token (set/not set).
+- `.gitattributes` recommendation;
+- GitHub token status (set/not set).
 
 ## `ai-fdocs check`
 
-- Проверяет, что все пакеты синхронизированы и актуальны.
-- При проблемах печатает список и завершает процесс с code `1`.
-- При успехе — code `0`.
+- Verifies all configured package docs are present and up to date.
+- On issues, prints list and exits with code `1`.
+- On success, exits with code `0`.
 
 ---
 
-## 6) Настройки и скрытые параметры
+## 6) Settings and hidden parameters
 
-## 6.1 Явные TOML-настройки
+## 6.1 Explicit TOML settings
 
 `[settings]`:
 
@@ -185,59 +185,59 @@ NPM-клон повторяет ключевую бизнес-логику Rust-
 
 `[packages.<name>]`:
 
-- `repo` (обязательно для sync через GitHub)
-- `subpath` (монорепо подпуть)
-- `files` (явный список)
+- `repo` (required for GitHub-based sync)
+- `subpath` (monorepo subpath)
+- `files` (explicit files)
 - `ai_notes`
 
-## 6.2 Скрытые/неочевидные параметры
+## 6.2 Hidden/non-obvious parameters
 
 1. **`GITHUB_TOKEN` / `GH_TOKEN`**
-   - применяются для GitHub API запросов.
+   - used for GitHub API requests.
 
-2. **Кеш-инвалидация по `config_hash`**
-   - хранится в `.aifd-meta.toml`;
-   - изменения в `repo/subpath/files/ai_notes` (и связанных полях) требуют resync.
+2. **Cache invalidation by `config_hash`**
+   - stored in `.aifd-meta.toml`;
+   - changes in repo/subpath/files/notes trigger resync.
 
 3. **Header injection**
-   - для `.md/.html/.htm` добавляется служебный заголовок источника.
+   - `.md/.html/.htm` files include a source metadata header.
 
-4. **Обрезка файлов**
-   - контент обрезается до `max_file_size_kb`, добавляется пометка `[TRUNCATED ...]`.
+4. **File truncation**
+   - content is truncated to `max_file_size_kb` and tagged with `[TRUNCATED ...]`.
 
-5. **Обработка changelog**
-   - changelog-файлы проходят дополнительное сокращение.
+5. **Changelog processing**
+   - changelog files get additional truncation/post-processing.
 
 ---
 
-## 7) Варианты использования
+## 7) Usage scenarios
 
-## Локальный сценарий
+## Local workflow
 
 1. `npm install`
 2. `npm run build`
 3. `node dist/cli.js init`
-4. редактировать `ai-fdocs.toml`
+4. adjust `ai-fdocs.toml`
 5. `node dist/cli.js sync`
 
-## CI-гейт
+## CI gate
 
-- запускать `node dist/cli.js check`;
-- при неактуальной документации job падает.
+- run `node dist/cli.js check`;
+- job fails when docs are stale/missing.
 
-## Экспериментальный tarball-сценарий
+## Experimental tarball workflow
 
-- включить `experimental_npm_tarball = true`;
-- использовать, если GitHub-источник нестабилен/неполон для части пакетов.
+- enable `experimental_npm_tarball = true`;
+- useful when GitHub-based docs retrieval is incomplete or unstable for some packages.
 
 ---
 
 ## 8) Degraded mode
 
-NPM-клон также best-effort:
+The NPM clone is also best-effort:
 
-- сбой по одному пакету не должен прерывать весь sync;
-- старый кеш сохраняется;
-- проблемы явно отражаются в статусах/check.
+- one package failure should not abort full sync;
+- existing cache is preserved;
+- issues are clearly reported in status/check.
 
-Итог: ухудшается только «свежесть контекста», но не стабильность проекта.
+Result: documentation freshness may degrade during outages, but platform stability remains intact.

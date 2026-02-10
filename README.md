@@ -28,12 +28,12 @@ Alignment policy for `npn/`:
 - same cache/status semantics where possible, adapted for npm packages.
 
 
-## Подробная техническая документация
+## Detailed technical documentation
 
-См. папку [`docs/architecture`](./docs/architecture):
+See [`docs/architecture`](./docs/architecture):
 
-- [Основной Rust-модуль](./docs/architecture/rust-module.md)
-- [NPM-клон](./docs/architecture/npm-clone.md)
+- [Core Rust module](./docs/architecture/rust-module.md)
+- [NPM clone](./docs/architecture/npm-clone.md)
 
 ## Why this exists
 
@@ -71,7 +71,7 @@ Implemented now:
 - prune outdated crate folders;
 - generate global index (`_INDEX.md`);
 - show status of synced docs;
-- continue sync when one crate/file fails (best-effort), reporting errors in итоговой статистике.
+- continue sync when one crate/file fails (best-effort), reporting errors in final summary statistics.
 - run crate sync in parallel for faster lockfile processing.
 
 Current commands:

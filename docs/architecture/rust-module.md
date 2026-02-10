@@ -1,241 +1,241 @@
-# Основной модуль: `cargo-ai-fdocs` (Rust)
+# Core module: `cargo-ai-fdocs` (Rust)
 
-## 1) Назначение
+## 1) Purpose
 
-`cargo-ai-fdocs` синхронизирует документацию зависимостей Rust-проекта по **точным версиям из `Cargo.lock`** и сохраняет её в локальный каталог для AI-инструментов (Copilot/Cursor/Windsurf и т.д.).
+`cargo-ai-fdocs` syncs dependency documentation for a Rust project using **exact versions from `Cargo.lock`** and stores it locally for AI tooling (Copilot/Cursor/Windsurf, etc.).
 
-Ключевая идея: AI получает контекст по тем версиям библиотек, которые реально используются в проекте, а не по устаревшим данным из обучения.
+Core idea: AI gets context for the real dependency versions used by the project, not stale training-era assumptions.
 
 ---
 
-## 2) Архитектура и роли модулей
+## 2) Architecture and module responsibilities
 
-## Оркестратор CLI
+## CLI orchestrator
 
-- `src/main.rs` — точка входа и маршрутизация команд:
-  - `sync` — полная синхронизация;
-  - `status` — вывод состояния;
-  - `check` — CI-проверка актуальности;
-  - `init` — генерация `ai-fdocs.toml`.
+- `src/main.rs` — entry point and command routing:
+  - `sync` — full synchronization;
+  - `status` — status report;
+  - `check` — CI freshness check;
+  - `init` — `ai-fdocs.toml` generation.
 
-## Конфигурация
+## Configuration
 
 - `src/config.rs`:
-  - загрузка/валидация `ai-fdocs.toml`;
-  - дефолты;
-  - совместимость со старым форматом `sources`.
+  - `ai-fdocs.toml` loading/validation;
+  - defaults;
+  - backward compatibility with legacy `sources` format.
 
-## Резолвер версий
+## Version resolver
 
 - `src/resolver.rs`:
-  - достаёт версии crate из `Cargo.lock`.
+  - resolves crate versions from `Cargo.lock`.
 
-## Сетевой fetcher (GitHub)
+## Network fetcher (GitHub)
 
 - `src/fetcher/github.rs`:
-  - определяет git ref (тег/ветка) для нужной версии;
-  - скачивает контент файлов;
-  - применяет ретраи/таймауты;
-  - классифицирует ошибки (auth/rate-limit/network/not-found).
+  - resolves git ref (tag/branch) for required version;
+  - downloads file contents;
+  - applies retries/timeouts;
+  - classifies errors (auth/rate-limit/network/not-found).
 
-## Хранилище и кеш
+## Storage and cache
 
 - `src/storage.rs`:
-  - запись файлов, `.aifd-meta.toml`, `_SUMMARY.md`;
-  - проверка кеша по fingerprint конфига;
-  - prune старых папок.
+  - writes files, `.aifd-meta.toml`, `_SUMMARY.md`;
+  - cache checks via config fingerprint;
+  - prune of outdated folders.
 
-## Отчётность
+## Reporting
 
 - `src/status.rs`:
-  - строит статусы `Synced / SyncedFallback / Outdated / Missing / Corrupted`.
+  - builds `Synced / SyncedFallback / Outdated / Missing / Corrupted` statuses.
 - `src/index.rs`:
-  - генерирует общий `_INDEX.md`.
+  - generates global `_INDEX.md`.
 
-## Инициализация
+## Initialization
 
 - `src/init.rs`:
-  - анализирует `Cargo.toml`;
-  - запрашивает metadata crates.io;
-  - пытается извлечь GitHub-репозиторий зависимости.
+  - reads `Cargo.toml`;
+  - calls crates.io metadata;
+  - attempts to infer dependency GitHub repositories.
 
 ---
 
-## 3) Потоки данных (куда и как «стучится»)
+## 3) Data flow (where/how it calls external services)
 
 ## 3.1 `sync`
 
-### Входные источники
+### Local input sources
 
-1. `ai-fdocs.toml` (локальный файл).
-2. `Cargo.lock` (локальный файл).
+1. `ai-fdocs.toml` (local file).
+2. `Cargo.lock` (local file).
 
-### Внешние HTTP вызовы
+### External HTTP calls
 
-Для каждого crate из конфига:
+For each configured crate:
 
-1. **Проверка тегов через GitHub API**
+1. **Tag probing via GitHub API**
    - `GET https://api.github.com/repos/{owner}/{repo}/git/ref/tags/{candidate}`
-   - кандидаты: `v{version}`, `{version}`, `{crate}-v{version}`, `{crate}-{version}`.
+   - candidates: `v{version}`, `{version}`, `{crate}-v{version}`, `{crate}-{version}`.
 
-2. **Fallback до default branch** (если теги не найдены)
+2. **Fallback to default branch** (if tags are missing)
    - `GET https://api.github.com/repos/{owner}/{repo}`
-   - берётся `default_branch`, помечается `is_fallback = true`.
+   - uses `default_branch`, marks `is_fallback = true`.
 
-3. **Скачивание файлов через raw.githubusercontent.com**
+3. **File download via raw.githubusercontent.com**
    - `GET https://raw.githubusercontent.com/{owner}/{repo}/{git_ref}/{path}`
-   - по default списку или явному `files` из конфига.
+   - uses either default file set or explicit `files` from config.
 
-### Локальный выход
+### Local output
 
 - `docs/ai/vendor-docs/rust/{crate}@{version}/...`
 - `.aifd-meta.toml`
 - `_SUMMARY.md`
-- общий `_INDEX.md`
+- global `_INDEX.md`
 
 ---
 
-## 4) Тайминги, интервалы, ретраи
+## 4) Timing, intervals, retries
 
-## 4.1 Сетевые настройки Rust fetcher
+## 4.1 Rust fetcher network behavior
 
-- Таймаут HTTP клиента: **30 секунд** на запрос.
-- Ретраи: до **3 попыток**.
-- Начальный backoff: **500ms**, затем экспоненциально (`500ms`, `1000ms`).
-- Повторяются только:
-  - server error (`5xx`),
-  - timeout/connect/request сетевые ошибки.
-- `401` => auth ошибка (без ретраев).
-- `403`/`429` => rate-limit ошибка (без ретраев).
+- HTTP client timeout: **30 seconds** per request.
+- Retries: up to **3 attempts**.
+- Base backoff: **500ms**, exponential (`500ms`, `1000ms`).
+- Retryable cases:
+  - server errors (`5xx`),
+  - timeout/connect/request network errors.
+- `401` => auth error (no retry).
+- `403`/`429` => rate-limit error (no retry).
 
-## 4.2 Параллелизм
+## 4.2 Concurrency
 
-- `sync` запускает обработку crate параллельно.
-- Лимит параллелизма регулируется `settings.sync_concurrency` (default `8`).
+- `sync` processes crates in parallel.
+- Concurrency cap is configurable via `settings.sync_concurrency` (default `8`).
 
 ---
 
-## 5) Поведение команд
+## 5) Command behavior
 
 ## `cargo ai-fdocs init`
 
-Что делает:
+What it does:
 
-1. Проверяет, существует ли целевой `ai-fdocs.toml`.
-2. Читает `Cargo.toml` и собирает зависимости (`dependencies` + `workspace.dependencies`).
-3. По каждой зависимости запрашивает crates.io:
+1. Checks whether target `ai-fdocs.toml` exists.
+2. Reads `Cargo.toml` and collects dependencies (`dependencies` + `workspace.dependencies`).
+3. For each dependency, calls crates.io:
    - `GET https://crates.io/api/v1/crates/{crate}`
-4. Из `repository/homepage` пытается извлечь `owner/repo` GitHub.
-5. Пишет базовый `ai-fdocs.toml`.
+4. Extracts `owner/repo` from `repository/homepage` when possible.
+5. Writes baseline `ai-fdocs.toml`.
 
-Ограничения:
+Limitations:
 
-- Если репозиторий не GitHub или нераспознан — crate пропускается.
-- Если конфиг существует, нужен `--force`.
+- Non-GitHub or non-parsable repositories are skipped.
+- If config exists, `--force` is required to overwrite.
 
 ## `cargo ai-fdocs sync [--force]`
 
-Что делает:
+What it does:
 
-1. Загружает конфиг и lockfile.
-2. При `prune = true` удаляет устаревшие папки.
-3. Для каждой crate:
-   - пропускает, если не найдена в `Cargo.lock`;
-   - пропускает по кешу, если fingerprint конфига не изменился (`--force` отключает это);
-   - резолвит git ref;
-   - качает docs файлы;
-   - даже при частичном фейле сохраняет то, что удалось скачать (best-effort);
-   - если ничего не скачано — считает ошибкой crate.
-4. Генерирует общий `_INDEX.md`.
-5. Возвращает итоговую статистику (synced/cached/skipped/errors + breakdown по типам ошибок).
+1. Loads config and lockfile.
+2. If `prune = true`, removes outdated folders.
+3. For each crate:
+   - skips if crate is missing in `Cargo.lock`;
+   - skips via cache if config fingerprint matches (`--force` bypasses cache);
+   - resolves git ref;
+   - fetches docs files;
+   - keeps best-effort behavior on partial failures (saves what was fetched);
+   - reports crate error if nothing was fetched.
+4. Regenerates global `_INDEX.md`.
+5. Prints aggregate stats (synced/cached/skipped/errors + error-type breakdown).
 
 ## `cargo ai-fdocs status [--format table|json]`
 
-Что делает:
+What it does:
 
-- Сравнивает конфиг + lock версии + сохранённую мету.
-- Выводит статус по каждой crate.
-- Формат:
-  - `table` (по умолчанию),
+- Compares config + lock versions + stored metadata.
+- Prints per-crate status.
+- Formats:
+  - `table` (default),
   - `json`.
 
 ## `cargo ai-fdocs check [--format table|json]`
 
-Что делает:
+What it does:
 
-- Выполняет ту же диагностику, что `status`.
-- Если найдены проблемы (`Outdated/Missing/Corrupted`) — завершает команду ошибкой (non-zero exit code).
-- В GitHub Actions дополнительно пишет `::error` аннотации по проблемным crate.
+- Runs the same diagnostics as `status`.
+- If issues exist (`Outdated/Missing/Corrupted`) returns non-zero exit code.
+- In GitHub Actions, additionally emits `::error` annotations for failing crates.
 
 ---
 
-## 6) Формат конфигурации и скрытые настройки
+## 6) Configuration and hidden settings
 
-## 6.1 Явные настройки (`[settings]`)
+## 6.1 Explicit settings (`[settings]`)
 
-- `output_dir` (default: `docs/ai/vendor-docs` → Rust сохраняется в подпапку `rust`)
+- `output_dir` (default: `docs/ai/vendor-docs`; Rust output is under `rust` subfolder)
 - `max_file_size_kb` (default `200`)
 - `prune` (default `true`)
-- `sync_concurrency` (default `8`, обязательно > 0)
+- `sync_concurrency` (default `8`, must be > 0)
 
-## 6.2 Настройки crate (`[crates.<name>]`)
+## 6.2 Per-crate settings (`[crates.<name>]`)
 
-- `repo` — `owner/repo` (предпочтительный формат)
-- `subpath` — для монорепо
-- `files` — явный список файлов (тогда все эти файлы считаются required)
-- `ai_notes` — подсказки для индекса/summary
+- `repo` — `owner/repo` (preferred format)
+- `subpath` — monorepo subpath
+- `files` — explicit file list (all listed files are required)
+- `ai_notes` — notes embedded into index/summary
 
-## 6.3 Скрытые/неочевидные настройки
+## 6.3 Hidden/non-obvious settings
 
 1. **`GITHUB_TOKEN` / `GH_TOKEN`**
-   - если не заданы, лимит GitHub API существенно ниже;
-   - с токеном повышается лимит.
+   - without token, GitHub API limits are lower;
+   - with token, limits are higher.
 
-2. **Fallback-режим по git ref**
-   - если тег не найден, берётся default branch;
-   - это не фатальная ошибка, но помечается как fallback.
+2. **Fallback git-ref mode**
+   - if no version tag is found, default branch is used;
+   - this is non-fatal but explicitly marked as fallback.
 
-3. **Кеш-инвалидация через fingerprint**
-   - любые важные изменения crate-конфига приводят к resync.
+3. **Cache invalidation via fingerprint**
+   - important crate-config changes trigger resync.
 
-4. **Header injection в markdown/html**
-   - в сохранённый файл добавляется служебный заголовок с origin/ref/path/date.
+4. **Header injection into markdown/html**
+   - saved docs include a service header with origin/ref/path/date.
 
 5. **CHANGELOG post-processing**
-   - changelog дополнительно сокращается по версии.
+   - changelog content is additionally truncated around relevant version context.
 
-6. **Обрезка больших файлов**
-   - файл обрезается до `max_file_size_kb`, добавляется маркер `[TRUNCATED ...]`.
+6. **Large-file truncation**
+   - file content is truncated to `max_file_size_kb` and tagged with `[TRUNCATED ...]`.
 
 ---
 
-## 7) Варианты использования
+## 7) Usage patterns
 
-## 7.1 Локально (разработчик)
+## 7.1 Local developer workflow
 
 1. `cargo ai-fdocs init`
-2. донастроить `ai-fdocs.toml`
+2. adjust `ai-fdocs.toml`
 3. `cargo ai-fdocs sync`
-4. добавить `docs/ai/vendor-docs/** linguist-generated=true` в `.gitattributes`
+4. optionally add `docs/ai/vendor-docs/** linguist-generated=true` to `.gitattributes`
 
-## 7.2 CI (quality gate)
+## 7.2 CI quality gate
 
-- запускать `cargo ai-fdocs check` в PR/merge pipeline;
-- при проблемах пайплайн падает, выводит проблемные зависимости.
+- run `cargo ai-fdocs check` in PR/merge pipeline;
+- pipeline fails when dependency docs are stale or missing.
 
-## 7.3 Плановый refresh
+## 7.3 Scheduled refresh
 
-- по расписанию запускать `cargo ai-fdocs sync`;
-- коммитить обновлённую docs-папку в репозиторий.
+- run `cargo ai-fdocs sync` on schedule;
+- commit refreshed docs artifacts.
 
 ---
 
-## 8) Поведение при сбоях (degraded mode)
+## 8) Failure/degraded-mode behavior
 
-Проект работает по best-effort логике:
+The tool follows best-effort behavior:
 
-- ошибка по одной crate не валит весь `sync`;
-- уже существующий кеш не удаляется автоматически (кроме целевого prune-правила);
-- проблемы отражаются в `status/check`.
+- one-crate failures do not abort the entire `sync`;
+- existing cache is preserved except where explicit prune rules apply;
+- issues are surfaced by `status/check`.
 
-Это позволяет не блокировать основной pipeline разработки из-за временных сетевых проблем.
+This keeps development pipelines stable even during temporary network/source outages.

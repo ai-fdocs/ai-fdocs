@@ -1,23 +1,23 @@
-# AI Fresh Docs — архитектура и эксплуатация
+# AI Fresh Docs — Architecture and Operations
 
-Эта папка содержит техническую документацию по двум реализациям проекта:
+This folder contains technical documentation for both project implementations:
 
-- **Основной модуль (Rust CLI `cargo-ai-fdocs`)**
-- **NPM-клон (Node.js/TypeScript CLI в `npn/`)**
+- **Core module (Rust CLI `cargo-ai-fdocs`)**
+- **NPM clone (Node.js/TypeScript CLI in `npn/`)**
 
-## Навигация
+## Navigation
 
-1. [Документация по основному Rust-модулю](./rust-module.md)
-2. [Документация по NPM-клону](./npm-clone.md)
+1. [Core Rust module documentation](./rust-module.md)
+2. [NPM clone documentation](./npm-clone.md)
 
-## Что покрыто
+## Coverage
 
-В документации подробно разобраны:
+The docs cover in detail:
 
-- назначение и зона ответственности каждого сервиса/модуля;
-- сетевые интеграции (куда и как выполняются запросы);
-- интервалы, таймауты, ретраи и ограничения;
-- точное поведение всех команд (`init`, `sync`, `status`, `check`);
-- форматы данных и структура сохранённых артефактов;
-- варианты использования (локально, CI, degraded mode);
-- скрытые и неочевидные настройки (`env`, fallback, кеш-инвалидация, prune-логика).
+- purpose and responsibility of each service/module;
+- external integrations (where and how requests are made);
+- intervals, timeouts, retries, and limits;
+- exact behavior of all commands (`init`, `sync`, `status`, `check`);
+- data formats and saved artifact structure;
+- usage patterns (local, CI, degraded mode);
+- hidden and non-obvious settings (`env`, fallback, cache invalidation, prune behavior).
