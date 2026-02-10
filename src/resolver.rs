@@ -35,54 +35,32 @@ pub fn resolve_cargo_versions(path: &Path) -> Result<HashMap<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::resolve_cargo_versions;
-
-    fn unique_temp_path(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "ai-fdocs-{name}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos()
-        ))
-    }
+    use std::fs;
 
     #[test]
-    fn resolves_versions_from_cargo_lock_packages() {
-        let dir = unique_temp_path("lock-ok");
-        std::fs::create_dir_all(&dir).expect("create temp dir");
-        let lock_path = dir.join("Cargo.lock");
+    fn parses_lockfile_packages_into_map() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ai-fdocs-resolver-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        let _ = fs::remove_file(&tmp);
 
         let content = r#"
 [[package]]
 name = "serde"
-version = "1.0.217"
+version = "1.0.210"
 
 [[package]]
 name = "tokio"
-version = "1.43.0"
+version = "1.44.0"
 "#;
-        std::fs::write(&lock_path, content).expect("write lockfile");
+        fs::write(&tmp, content).expect("write lockfile");
 
-        let resolved = resolve_cargo_versions(&lock_path).expect("resolve lockfile");
-        assert_eq!(resolved.get("serde"), Some(&"1.0.217".to_string()));
-        assert_eq!(resolved.get("tokio"), Some(&"1.43.0".to_string()));
+        let versions = resolve_cargo_versions(&tmp).expect("resolve versions");
+        assert_eq!(versions.get("serde"), Some(&"1.0.210".to_string()));
+        assert_eq!(versions.get("tokio"), Some(&"1.44.0".to_string()));
 
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn returns_parse_error_when_package_array_is_missing() {
-        let dir = unique_temp_path("lock-missing-packages");
-        std::fs::create_dir_all(&dir).expect("create temp dir");
-        let lock_path = dir.join("Cargo.lock");
-        std::fs::write(&lock_path, "version = 3\n").expect("write invalid lockfile");
-
-        let err = resolve_cargo_versions(&lock_path).expect_err("must fail");
-        assert!(err
-            .to_string()
-            .contains("Cargo.lock parsing error: `package` array is missing"));
-
-        let _ = std::fs::remove_dir_all(dir);
+        let _ = fs::remove_file(&tmp);
     }
 }

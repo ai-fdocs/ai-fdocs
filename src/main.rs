@@ -318,14 +318,14 @@ async fn sync_one_crate(
         max_file_size_kb,
     };
 
-    match storage::save_crate_files(
-        &rust_output_dir,
-        &crate_name,
-        &version,
-        &save_ctx,
-        &fetched.files,
-        &crate_doc,
-    ) {
+    let save_req = storage::SaveRequest {
+        crate_name: &crate_name,
+        version: &version,
+        fetched_files: &fetched_files,
+        crate_config: &crate_doc,
+    };
+
+    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
         Ok(saved) => SyncOutcome::Synced(saved),
         Err(e) => {
             warn!("  ✗ failed to save {crate_name}@{version}: {e}");
@@ -454,6 +454,7 @@ fn print_statuses(format: OutputFormat, statuses: &[crate::status::CrateStatus])
 
 fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
+    info!("Loaded config from {}", config_path.display());
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
 
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
@@ -463,6 +464,7 @@ fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
 
 fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
+    info!("Loaded config from {}", config_path.display());
     let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
 

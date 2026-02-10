@@ -46,6 +46,19 @@ struct RepoInfo {
 
 impl GitHubFetcher {
     pub fn new() -> Self {
+        Self::with_base_urls_internal(
+            "https://api.github.com",
+            "https://raw.githubusercontent.com",
+            false,
+        )
+    }
+
+    #[cfg(test)]
+    fn with_base_urls_no_proxy(api_base_url: &str, raw_base_url: &str) -> Self {
+        Self::with_base_urls_internal(api_base_url, raw_base_url, true)
+    }
+
+    fn with_base_urls_internal(api_base_url: &str, raw_base_url: &str, no_proxy: bool) -> Self {
         let token = env::var("GITHUB_TOKEN")
             .or_else(|_| env::var("GH_TOKEN"))
             .ok();
@@ -63,32 +76,21 @@ impl GitHubFetcher {
             );
         }
 
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .user_agent(APP_USER_AGENT)
             .default_headers(headers)
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("reqwest client");
+            .timeout(Duration::from_secs(30));
 
-        Self {
-            client,
-            api_base_url: "https://api.github.com".to_string(),
-            raw_base_url: "https://raw.githubusercontent.com".to_string(),
+        if no_proxy {
+            builder = builder.no_proxy();
         }
-    }
 
-    #[cfg(test)]
-    fn with_base_urls(api_base_url: String, raw_base_url: String) -> Self {
-        let client = Client::builder()
-            .user_agent(APP_USER_AGENT)
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("reqwest client");
+        let client = builder.build().expect("reqwest client");
 
         Self {
             client,
-            api_base_url,
-            raw_base_url,
+            api_base_url: api_base_url.trim_end_matches('/').to_string(),
+            raw_base_url: raw_base_url.trim_end_matches('/').to_string(),
         }
     }
 
@@ -289,26 +291,142 @@ impl GitHubFetcher {
 
 #[cfg(test)]
 mod tests {
-    use super::GitHubFetcher;
+    use super::*;
+    use std::collections::HashMap;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
 
-    #[test]
-    fn builds_api_and_raw_urls_from_overridden_base_urls() {
-        let fetcher = GitHubFetcher::with_base_urls(
-            "http://localhost:18080/api".to_string(),
-            "http://localhost:18080/raw".to_string(),
+    fn start_mock_server(routes: HashMap<String, (u16, String)>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+        let addr = listener.local_addr().expect("local addr");
+        let routes = Arc::new(Mutex::new(routes));
+
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = match stream {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+
+                let mut buf = [0_u8; 4096];
+                let read = match stream.read(&mut buf) {
+                    Ok(n) => n,
+                    Err(_) => continue,
+                };
+                if read == 0 {
+                    continue;
+                }
+
+                let req = String::from_utf8_lossy(&buf[..read]);
+                let path = req
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("/");
+
+                let (status, body) = routes
+                    .lock()
+                    .expect("lock routes")
+                    .get(path)
+                    .cloned()
+                    .unwrap_or((404, String::new()));
+
+                let response = format!(
+                    "HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn resolves_fallback_to_default_branch_when_tags_missing() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "/repos/owner/repo/git/ref/tags/v1.2.3".to_string(),
+            (404, String::new()),
+        );
+        routes.insert(
+            "/repos/owner/repo/git/ref/tags/1.2.3".to_string(),
+            (404, String::new()),
+        );
+        routes.insert(
+            "/repos/owner/repo/git/ref/tags/demo-v1.2.3".to_string(),
+            (404, String::new()),
+        );
+        routes.insert(
+            "/repos/owner/repo/git/ref/tags/demo-1.2.3".to_string(),
+            (404, String::new()),
+        );
+        routes.insert(
+            "/repos/owner/repo".to_string(),
+            (200, "{\"default_branch\":\"main\"}".to_string()),
         );
 
-        assert_eq!(
-            fetcher.api_tag_url("owner/repo", "v1.2.3"),
-            "http://localhost:18080/api/repos/owner/repo/git/ref/tags/v1.2.3"
+        let api_base = start_mock_server(routes);
+        let fetcher =
+            GitHubFetcher::with_base_urls_no_proxy(api_base.as_str(), "http://raw.invalid");
+
+        let resolved = fetcher
+            .resolve_ref("owner/repo", "demo", "1.2.3")
+            .await
+            .expect("resolve fallback ref");
+        assert_eq!(resolved.git_ref, "main");
+        assert!(resolved.is_fallback);
+    }
+
+    #[tokio::test]
+    async fn fetch_files_reports_partial_failures_and_optional_miss() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "/owner/repo/main/README.md".to_string(),
+            (200, "doc".to_string()),
         );
-        assert_eq!(
-            fetcher.api_repo_url("owner/repo"),
-            "http://localhost:18080/api/repos/owner/repo"
+        routes.insert(
+            "/owner/repo/main/CHANGELOG.md".to_string(),
+            (404, String::new()),
         );
-        assert_eq!(
-            fetcher.raw_file_url("owner/repo", "main", "README.md"),
-            "http://localhost:18080/raw/owner/repo/main/README.md"
-        );
+        routes.insert("/owner/repo/main/LICENSE".to_string(), (404, String::new()));
+
+        let raw_base = start_mock_server(routes);
+        let fetcher =
+            GitHubFetcher::with_base_urls_no_proxy("http://api.invalid", raw_base.as_str());
+
+        let requests = vec![
+            FileRequest {
+                original_path: "README.md".to_string(),
+                candidates: vec!["README.md".to_string()],
+                required: true,
+            },
+            FileRequest {
+                original_path: "CHANGELOG.md".to_string(),
+                candidates: vec!["CHANGELOG.md".to_string()],
+                required: true,
+            },
+            FileRequest {
+                original_path: "LICENSE".to_string(),
+                candidates: vec!["LICENSE".to_string()],
+                required: false,
+            },
+        ];
+
+        let results = fetcher.fetch_files("owner/repo", "main", &requests).await;
+        assert_eq!(results.len(), 3);
+
+        assert!(results[0].is_ok());
+        assert!(matches!(
+            &results[1],
+            Err(AiDocsError::GitHubFileNotFound { .. })
+        ));
+        assert!(matches!(
+            &results[2],
+            Err(AiDocsError::OptionalFileNotFound(path)) if path == "LICENSE"
+        ));
     }
 }

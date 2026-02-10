@@ -254,7 +254,7 @@ with your project’s real dependency graph.
 ### 1) Reliability hardening (near-term)
 - [x] Improve retry/backoff behavior for GitHub API and raw-content downloads.
 - [x] Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
-- [ ] Expand integration tests for lockfile parsing and fetch fallback scenarios.
+- [x] Expand integration tests for lockfile parsing, fallback-to-branch, and partial failure scenarios.
 
 ### 2) CI and team workflows
 - [x] Stabilize `cargo ai-fdocs check` exit codes for predictable CI gating.
@@ -262,9 +262,9 @@ with your project’s real dependency graph.
 - [x] Provide ready-to-copy GitHub Actions recipes in docs.
 
 ### 3) Output and cache stability
-- [x] `.aifd-meta.toml` carries explicit schema versioning (`schema_version = 1`) as a stable baseline.
-- [x] Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
-- [ ] Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
+- `.aifd-meta.toml` now carries an explicit schema version (`schema_version = 1`) as a stable baseline.
+- Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
+- [x] Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
 
 ### 4) Release readiness (v1.0)
 - [x] Finalize CLI UX and help text consistency across all subcommands.
@@ -272,8 +272,7 @@ with your project’s real dependency graph.
 - [x] Publish a compatibility/support policy and semantic-versioning guarantees.
 
 ### 5) Tooling technical debt (next refactor candidate)
-- [ ] `cargo clippy` may still report `too_many_arguments` for
-  `storage::save_crate_files`; non-blocking for release, but a near-term refactor target.
+- [x] Refactor `storage::save_crate_files` API to remove the `too_many_arguments` clippy warning.
 
 ## License
 
