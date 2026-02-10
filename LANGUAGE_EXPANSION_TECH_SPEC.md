@@ -328,3 +328,55 @@ ai_notes = "HTTP client best practices"
 
 Единый бренд: **AI Fresh Docs**.
 
+
+## 13. VS Code extension module (draft v0.1)
+
+Цель: упаковать текущий CLI-контур в удобный UX для VS Code без дублирования бизнес-логики.
+
+### 13.1 Принцип
+- Extension НЕ реализует sync-логику заново.
+- Extension вызывает установленный CLI (`cargo-ai-fdocs` / `npm-ai-fdocs` / другие sibling-CLI) и отображает результаты.
+
+### 13.2 Команды extension
+- `aiFreshDocs.init`
+- `aiFreshDocs.sync`
+- `aiFreshDocs.status`
+- `aiFreshDocs.check`
+- `aiFreshDocs.openIndex`
+
+### 13.3 UX-поведение
+- Output channel с логами выполнения.
+- Status bar item:
+  - `AI Docs: Synced`
+  - `AI Docs: Outdated`
+  - `AI Docs: Error`
+- Diagnostics/Problems на основе `check --format json`.
+- Quick action: "Run ai-fdocs sync" при обнаружении drift.
+
+### 13.4 Activation events
+- `onCommand:aiFreshDocs.*`
+- `workspaceContains:**/ai-fdocs.toml`
+- (опционально) watcher lockfile (`Cargo.lock`, `package-lock.json`, etc.).
+
+### 13.5 Важный контракт между CLI и extension
+- Extension опирается на machine-readable вывод (`status/check --format json`).
+- Любое изменение JSON-схемы должно сопровождаться:
+  1. обновлением схемы/адаптера в extension,
+  2. обновлением этого ТЗ,
+  3. записью в changelog/release notes.
+
+### 13.6 Публикация
+- Отдельный репозиторий/пакет VS Code extension после стабилизации CLI-контракта.
+- На раннем этапе допустим monorepo-подход.
+
+---
+
+## 14. Governance: правило консистентности (обязательно)
+
+Если меняем core-библиотеку/контракт (команды, статус-коды, JSON-формат, структуру output, metadata-схему), **обязательно синхронно обновляем**:
+1. `Manifest.md` (стратегия и контракт);
+2. `LANGUAGE_EXPANSION_TECH_SPEC.md` (ТЗ для других языков);
+3. документацию sibling-реализаций (например, `npn/README.md`, `npn/ROADMAP.md`);
+4. спецификацию/код VS Code extension (если изменение затрагивает CLI/API).
+
+Это требование нужно, чтобы не терять консистентность между реализациями и инструментами.
