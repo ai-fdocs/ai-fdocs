@@ -18,8 +18,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
+use crate::error::AiDocsError;
 use crate::error::{Result, SyncErrorKind};
-use crate::fetcher::github::{FileRequest, GitHubFetcher};
+use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
 use crate::init::run_init as run_init_command;
 use crate::status::{collect_status, print_status_table, DocsStatus};
 
@@ -288,19 +289,7 @@ async fn sync_one_crate(
         .fetch_files(&repo, &resolved.git_ref, &requests)
         .await;
 
-    let fetched_files: Vec<_> = results
-        .into_iter()
-        .filter_map(|r| match r {
-            Ok(file) => Some(file),
-            Err(e) => match e {
-                crate::error::AiDocsError::OptionalFileNotFound(_) => None,
-                other => {
-                    warn!("  ✗ {crate_name}@{version}: {other}");
-                    None
-                }
-            },
-        })
-        .collect();
+    let fetched_files = collect_fetched_files(results, &crate_name, &version);
 
     if fetched_files.is_empty() {
         warn!("  ✗ no files fetched for {crate_name}@{version}");
@@ -327,6 +316,26 @@ async fn sync_one_crate(
             SyncOutcome::Error(e.sync_kind())
         }
     }
+}
+
+fn collect_fetched_files(
+    results: Vec<Result<FetchedFile>>,
+    crate_name: &str,
+    version: &str,
+) -> Vec<FetchedFile> {
+    results
+        .into_iter()
+        .filter_map(|r| match r {
+            Ok(file) => Some(file),
+            Err(e) => match e {
+                AiDocsError::OptionalFileNotFound(_) => None,
+                other => {
+                    warn!("  ✗ {crate_name}@{version}: {other}");
+                    None
+                }
+            },
+        })
+        .collect()
 }
 
 fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) -> Vec<FileRequest> {
@@ -453,7 +462,11 @@ fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{should_emit_plain_check_errors, OutputFormat};
+    use super::{
+        build_requests, collect_fetched_files, should_emit_plain_check_errors, OutputFormat,
+    };
+    use crate::error::AiDocsError;
+    use crate::fetcher::github::FetchedFile;
 
     #[test]
     fn emits_plain_errors_only_for_table_outside_gha() {
@@ -465,5 +478,41 @@ mod tests {
     fn never_emits_plain_errors_in_github_actions() {
         assert!(!should_emit_plain_check_errors(OutputFormat::Table, true));
         assert!(!should_emit_plain_check_errors(OutputFormat::Json, true));
+    }
+
+    #[test]
+    fn build_requests_prefers_explicit_files_and_marks_them_required() {
+        let requests = build_requests(
+            Some("docs"),
+            Some(vec!["README.md".to_string(), "guide/intro.md".to_string()]),
+        );
+
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|r| r.required));
+        assert_eq!(requests[0].candidates, vec!["README.md"]);
+        assert_eq!(requests[1].candidates, vec!["guide/intro.md"]);
+    }
+
+    #[test]
+    fn collect_fetched_files_keeps_successes_on_partial_failures() {
+        let results = vec![
+            Ok(FetchedFile {
+                path: "README.md".to_string(),
+                source_url: "https://example.invalid/readme".to_string(),
+                content: "hello".to_string(),
+            }),
+            Err(AiDocsError::OptionalFileNotFound(
+                "CHANGELOG.md".to_string(),
+            )),
+            Err(AiDocsError::GitHubFileNotFound {
+                repo: "owner/repo".to_string(),
+                path: "docs/guide.md".to_string(),
+                tried_tags: vec!["v1.0.0".to_string()],
+            }),
+        ];
+
+        let kept = collect_fetched_files(results, "demo", "1.0.0");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].path, "README.md");
     }
 }
