@@ -139,12 +139,43 @@ docs/ai/vendor-docs/rust/
 
 В CI-режиме `check` должен показывать причины по каждому проблемному crate; в GitHub Actions — дополнительно печатать `::error` аннотации.
 
-Рецепт для GitHub Actions (минимальный):
+Рецепты для GitHub Actions:
+
+Минимальный `check`:
 ```yaml
 - uses: actions/checkout@v4
 - uses: dtolnay/rust-toolchain@stable
 - uses: Swatinem/rust-cache@v2
 - run: cargo ai-fdocs check --format json
+```
+
+Плановый `sync` (manual/schedule) с авто-коммитом обновлённых docs:
+```yaml
+- uses: actions/checkout@v4
+- uses: dtolnay/rust-toolchain@stable
+- uses: Swatinem/rust-cache@v2
+- env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  run: cargo ai-fdocs sync
+- run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    git add docs/ai/vendor-docs/rust ai-fdocs.toml
+    git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
+- run: git push
+```
+
+Вариант с явным cache key (`actions/cache`) для `~/.cargo/*` и `target`:
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: |
+      ~/.cargo/registry
+      ~/.cargo/git
+      target
+    key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    restore-keys: |
+      ${{ runner.os }}-cargo-
 ```
 
 JSON-контракт `status/check --format json`:

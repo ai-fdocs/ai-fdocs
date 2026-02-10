@@ -131,7 +131,9 @@ backward compatibility, but new configs should use `repo`.
 
 In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Actions they are additionally emitted as `::error` annotations.
 
-### CI recipe (GitHub Actions)
+### CI recipes (GitHub Actions)
+
+#### 1) `check` gate (PR/merge safety)
 
 ```yaml
 name: ai-fdocs-check
@@ -153,6 +155,74 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check ai-fdocs status (JSON)
+        run: cargo ai-fdocs check --format json
+```
+
+#### 2) `sync` updater (scheduled + manual)
+
+```yaml
+name: ai-fdocs-sync
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Mondays 06:00 UTC
+
+jobs:
+  sync-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Sync docs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo ai-fdocs sync
+
+      - name: Commit updated docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/ai/vendor-docs/rust ai-fdocs.toml
+          git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
+
+      - name: Push changes
+        run: git push
+```
+
+#### 3) `cache`-aware variant (explicit Cargo cache keys)
+
+```yaml
+name: ai-fdocs-check-cache
+on:
+  pull_request:
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run check
         run: cargo ai-fdocs check --format json
 ```
 
