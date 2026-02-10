@@ -1,0 +1,32 @@
+name: NPM (npn scaffold)
+
+on:
+  push:
+    paths:
+      - 'npn/**'
+      - '.github/workflows/npm-npn.yml'
+  pull_request:
+    paths:
+      - 'npn/**'
+      - '.github/workflows/npm-npn.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  placeholder:
+    name: Placeholder Node check for npn
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Placeholder
+        run: |
+          echo "npn scaffold detected."
+          echo "Add source/build/test steps when NPM code is ready."
