@@ -136,7 +136,7 @@ async fn run_sync(config_path: &PathBuf, force: bool) -> Result<()> {
             continue;
         };
 
-        if !force && storage::is_cached(&rust_output_dir, crate_name, &version) {
+        if !force && storage::is_cached(&rust_output_dir, crate_name, &version, crate_doc) {
             info!("  ⏭ {crate_name}@{version}: cached, skipping");
             if let Some(saved) =
                 storage::read_cached_info(&rust_output_dir, crate_name, &version, crate_doc)

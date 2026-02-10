@@ -27,7 +27,7 @@ Implemented now:
 - parse project config (`ai-fdocs.toml`);
 - resolve crate versions from `Cargo.lock`;
 - fetch docs from GitHub (including custom file lists);
-- cache per crate/version with metadata;
+- cache per crate/version with metadata and config fingerprint invalidation;
 - prune outdated crate folders;
 - generate global index (`_INDEX.md`);
 - show status of synced docs;

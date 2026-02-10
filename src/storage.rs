@@ -16,6 +16,8 @@ pub struct CrateMeta {
     pub git_ref: String,
     pub fetched_at: String,
     pub is_fallback: bool,
+    #[serde(default)]
+    pub config_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +28,16 @@ pub struct SavedCrate {
     pub is_fallback: bool,
     pub files: Vec<String>,
     pub ai_notes: String,
+}
+
+fn crate_config_fingerprint(crate_config: &CrateDoc) -> String {
+    let repo = crate_config.github_repo().unwrap_or_default().trim();
+    let subpath = crate_config.subpath.as_deref().unwrap_or_default().trim();
+
+    let mut files = crate_config.effective_files().unwrap_or_default();
+    files.sort();
+
+    format!("repo={repo}\nsubpath={subpath}\nfiles={}", files.join("|"))
 }
 
 fn render_crate_summary(saved: &SavedCrate) -> String {
@@ -117,7 +129,12 @@ fn truncate_if_needed(content: &str, max_size_kb: usize) -> String {
     format!("{truncated}\n\n[TRUNCATED by ai-fdocs at {max_size_kb}KB]\n")
 }
 
-pub fn is_cached(output_dir: &Path, crate_name: &str, version: &str) -> bool {
+pub fn is_cached(
+    output_dir: &Path,
+    crate_name: &str,
+    version: &str,
+    crate_config: &CrateDoc,
+) -> bool {
     let crate_dir = output_dir.join(format!("{crate_name}@{version}"));
     let meta_path = crate_dir.join(".aifd-meta.toml");
 
@@ -127,7 +144,15 @@ pub fn is_cached(output_dir: &Path, crate_name: &str, version: &str) -> bool {
 
     match fs::read_to_string(&meta_path) {
         Ok(content) => match toml::from_str::<CrateMeta>(&content) {
-            Ok(meta) => meta.version == version,
+            Ok(meta) => {
+                let expected_fp = crate_config_fingerprint(crate_config);
+                meta.version == version
+                    && meta
+                        .config_fingerprint
+                        .as_ref()
+                        .map(|fp| fp == &expected_fp)
+                        .unwrap_or(false)
+            }
             Err(_) => false,
         },
         Err(_) => false,
@@ -186,6 +211,7 @@ pub fn save_crate_files(
         git_ref: resolved.git_ref.clone(),
         fetched_at: Utc::now().format("%Y-%m-%d").to_string(),
         is_fallback: resolved.is_fallback,
+        config_fingerprint: Some(crate_config_fingerprint(crate_config)),
     };
 
     let meta_content = toml::to_string_pretty(&meta)
@@ -312,6 +338,7 @@ pub fn rust_output_dir(base_output_dir: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::CrateDoc;
 
     #[test]
     fn test_flatten_root_file() {
@@ -344,6 +371,23 @@ mod tests {
     fn test_split_name_version() {
         assert_eq!(split_name_version("serde@1.0.0"), Some(("serde", "1.0.0")));
         assert_eq!(split_name_version("serde"), None);
+    }
+
+    #[test]
+    fn test_config_fingerprint_changes_when_repo_changes() {
+        let mut cfg = CrateDoc {
+            repo: Some("serde-rs/serde".to_string()),
+            subpath: None,
+            files: None,
+            sources: None,
+            ai_notes: String::new(),
+        };
+
+        let fp1 = crate_config_fingerprint(&cfg);
+        cfg.repo = Some("tokio-rs/tokio".to_string());
+        let fp2 = crate_config_fingerprint(&cfg);
+
+        assert_ne!(fp1, fp2);
     }
 
     #[test]

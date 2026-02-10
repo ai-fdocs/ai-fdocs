@@ -84,7 +84,7 @@ Legacy-формат `sources = [{ type = "github", repo = "..." }]` остаёт
 3. (Опционально) выполнить pruning.
 4. Для каждого crate из конфига:
    - проверить, есть ли версия в lock;
-   - проверить кэш (`crate@version` + `.aifd-meta.toml`);
+   - проверить кэш (`crate@version` + `.aifd-meta.toml` + fingerprint конфигурации `repo/subpath/files`);
    - определить git ref (тег, иначе fallback на branch);
    - скачать нужные файлы;
    - обработать CHANGELOG;
