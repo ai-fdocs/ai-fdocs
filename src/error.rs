@@ -16,10 +16,7 @@ pub enum AiDocsError {
     CargoLockParse(String),
 
     #[error("HTTP request failed for {url}: {source}")]
-    Fetch {
-        url: String,
-        source: reqwest::Error,
-    },
+    Fetch { url: String, source: reqwest::Error },
 
     #[error("GitHub file not found: {repo}/{path} (tried tags: {tried_tags:?})")]
     GitHubFileNotFound {

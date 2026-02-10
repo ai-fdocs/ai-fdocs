@@ -88,9 +88,7 @@ async fn run_sync(config_path: &PathBuf) -> error::Result<()> {
         let version = match rust_versions.get(crate_name.as_str()) {
             Some(v) => v.clone(),
             None => {
-                warn!(
-                    "Crate '{crate_name}' not found in Cargo.lock, skipping"
-                );
+                warn!("Crate '{crate_name}' not found in Cargo.lock, skipping");
                 continue;
             }
         };
@@ -102,19 +100,14 @@ async fn run_sync(config_path: &PathBuf) -> error::Result<()> {
         for source in &crate_doc.sources {
             match source {
                 Source::GitHub { repo, files } => {
-                    let results = fetcher
-                        .fetch_crate_files(repo, &version, files)
-                        .await;
+                    let results = fetcher.fetch_crate_files(repo, &version, files).await;
 
                     for result in results {
                         match result {
                             Ok(mut file) => {
                                 // Обрезаем CHANGELOG
                                 if file.filename.to_uppercase().contains("CHANGELOG") {
-                                    file.content = trim_changelog(
-                                        &file.content,
-                                        &version,
-                                    );
+                                    file.content = trim_changelog(&file.content, &version);
                                 }
                                 info!("  ✓ {}", file.filename);
                                 all_files.push(file);
@@ -183,16 +176,16 @@ async fn run_status(config_path: &PathBuf) -> error::Result<()> {
             .join(format!("{crate_name}@{lock_version}"));
 
         let status = if crate_dir.exists() {
-            "✅ OK"
+            "✅ OK".to_string()
         } else {
             // Может есть другая версия?
             let rust_dir = output_dir.join("rust");
             let existing = find_existing_version(&rust_dir, crate_name);
             match existing {
                 Some(old_ver) => {
-                    &format!("⚠️  OUTDATED ({old_ver} → {lock_version})")
+                    format!("⚠️  OUTDATED ({old_ver} → {lock_version})")
                 }
-                None => "❌ MISSING",
+                None => "❌ MISSING".to_string(),
             }
         };
 
@@ -202,10 +195,7 @@ async fn run_status(config_path: &PathBuf) -> error::Result<()> {
     Ok(())
 }
 
-fn find_existing_version(
-    ecosystem_dir: &std::path::Path,
-    crate_name: &str,
-) -> Option<String> {
+fn find_existing_version(ecosystem_dir: &std::path::Path, crate_name: &str) -> Option<String> {
     let prefix = format!("{crate_name}@");
     if let Ok(entries) = std::fs::read_dir(ecosystem_dir) {
         for entry in entries.flatten() {
