@@ -54,6 +54,8 @@ node dist/cli.js --help
 
 Detailed roadmap: [`ROADMAP.md`](./ROADMAP.md).
 
+ADR по выбору default source: [`docs/adr/0001-docs-source-strategy.md`](./docs/adr/0001-docs-source-strategy.md).
+
 
 ## Runbook
 
