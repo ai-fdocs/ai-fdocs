@@ -223,6 +223,59 @@ repo = "serde-rs/serde"
     }
 
     #[test]
+    fn config_with_non_integer_max_file_size_fails_parse() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "ai-fdocs-invalid-max-file-size-float-{suffix}.toml"
+        ));
+
+        fs::write(
+            &path,
+            r#"[settings]
+max_file_size_kb = 1.5
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("non-integer max_file_size_kb must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err.to_string().contains("max_file_size_kb"));
+    }
+
+    #[test]
+    fn config_with_non_numeric_max_file_size_fails_parse() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("ai-fdocs-invalid-max-file-size-bool-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+max_file_size_kb = true
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("non-numeric max_file_size_kb must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err.to_string().contains("max_file_size_kb"));
+    }
+
+    #[test]
     fn config_with_zero_sync_concurrency_fails_validation() {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
