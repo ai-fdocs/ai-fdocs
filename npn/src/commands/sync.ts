@@ -30,6 +30,18 @@ interface SourceStat {
   cached: number;
 }
 
+export interface SyncReport {
+  source: SyncSource;
+  totals: {
+    synced: number;
+    cached: number;
+    skipped: number;
+    errors: number;
+  };
+  sourceStats: Record<SyncSource, SourceStat>;
+  errorCodes: Record<string, number>;
+}
+
 export function summarizeSourceStats(results: SyncTaskResult[]): Record<SyncSource, SourceStat> {
   const stats: Record<SyncSource, SourceStat> = {
     github: { synced: 0, errors: 0, skipped: 0, cached: 0 },
@@ -44,8 +56,6 @@ export function summarizeSourceStats(results: SyncTaskResult[]): Record<SyncSour
   return stats;
 }
 
-
-
 export function summarizeErrorCodes(results: SyncTaskResult[]): Record<string, number> {
   const counts: Record<string, number> = {};
 
@@ -58,6 +68,20 @@ export function summarizeErrorCodes(results: SyncTaskResult[]): Record<string, n
   return counts;
 }
 
+export function buildSyncReport(results: SyncTaskResult[], source: SyncSource): SyncReport {
+  return {
+    source,
+    totals: {
+      synced: results.filter((r) => r.status === "synced").length,
+      cached: results.filter((r) => r.status === "cached").length,
+      skipped: results.filter((r) => r.status === "skipped").length,
+      errors: results.filter((r) => r.status === "error").length,
+    },
+    sourceStats: summarizeSourceStats(results),
+    errorCodes: summarizeErrorCodes(results),
+  };
+}
+
 function toErrorInfo(error: unknown): { message: string; code?: string } {
   if (error instanceof AiDocsError) {
     return { message: error.message, code: error.code };
@@ -68,7 +92,33 @@ function toErrorInfo(error: unknown): { message: string; code?: string } {
   return { message: String(error) };
 }
 
-export async function cmdSync(projectRoot: string, force: boolean): Promise<void> {
+function printSyncSummary(report: SyncReport): void {
+  const activeStats = report.sourceStats[report.source];
+  console.log(
+    chalk.gray(
+      `Source stats (${report.source}): synced=${activeStats.synced}, cached=${activeStats.cached}, skipped=${activeStats.skipped}, errors=${activeStats.errors}`
+    )
+  );
+
+  const errorCodeSummary = Object.entries(report.errorCodes)
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, count]) => `${code}=${count}`)
+    .join(", ");
+  if (errorCodeSummary) {
+    console.log(chalk.gray(`Error summary: ${errorCodeSummary}`));
+  }
+
+  console.log(
+    chalk.green(
+      `\n✅ Sync complete: ${report.totals.synced} synced, ${report.totals.cached} cached, ${report.totals.skipped} skipped, ${report.totals.errors} errors.`
+    )
+  );
+}
+
+export async function cmdSync(projectRoot: string, force: boolean, reportFormat: string = "text"): Promise<void> {
+  if (reportFormat !== "text" && reportFormat !== "json") {
+    throw new AiDocsError(`Unsupported --report-format value: ${reportFormat}`, "INVALID_FORMAT");
+  }
   console.log(chalk.blue(`Starting sync (v0.2)...${force ? " (force mode)" : ""}`));
 
   const config = loadConfig(projectRoot);
@@ -189,21 +239,12 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
   const results = await Promise.all(tasks);
 
   const savedPackages: SavedPackage[] = [];
-  let synced = 0;
-  let cached = 0;
-  let skipped = 0;
-  let errors = 0;
-
   for (const result of results) {
     if (result.saved) savedPackages.push(result.saved);
-    if (result.status === "synced") synced++;
-    if (result.status === "cached") cached++;
     if (result.status === "skipped") {
-      skipped++;
       console.log(chalk.yellow(`  ⏭ ${result.message}`));
     }
     if (result.status === "error") {
-      errors++;
       console.log(chalk.red(`  ❌ ${result.message}`));
     }
   }
@@ -211,22 +252,11 @@ export async function cmdSync(projectRoot: string, force: boolean): Promise<void
   savedPackages.sort((a, b) => a.name.localeCompare(b.name));
   generateIndex(outputDir, savedPackages);
 
-  const sourceStats = summarizeSourceStats(results);
-  const activeStats = sourceStats[selectedSource];
-  console.log(
-    chalk.gray(
-      `Source stats (${selectedSource}): synced=${activeStats.synced}, cached=${activeStats.cached}, skipped=${activeStats.skipped}, errors=${activeStats.errors}`
-    )
-  );
+  const report = buildSyncReport(results, selectedSource);
 
-  const errorCodes = summarizeErrorCodes(results);
-  const errorCodeSummary = Object.entries(errorCodes)
-    .sort((a, b) => b[1] - a[1])
-    .map(([code, count]) => `${code}=${count}`)
-    .join(", ");
-  if (errorCodeSummary) {
-    console.log(chalk.gray(`Error summary: ${errorCodeSummary}`));
+  if (reportFormat === "json") {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    printSyncSummary(report);
   }
-
-  console.log(chalk.green(`\n✅ Sync complete: ${synced} synced, ${cached} cached, ${skipped} skipped, ${errors} errors.`));
 }
