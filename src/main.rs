@@ -23,7 +23,7 @@ use crate::error::{Result, SyncErrorKind};
 use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
 use crate::fetcher::latest::{is_docsrs_fallback_eligible, LatestDocsFetcher};
 use crate::init::run_init as run_init_command;
-use crate::status::{collect_status, print_status_table, DocsStatus};
+use crate::status::{collect_status, collect_status_latest, print_status_table, DocsStatus};
 
 const DEFAULT_CONFIG_PATH: &str = "ai-fdocs.toml";
 
@@ -630,20 +630,33 @@ fn print_statuses(format: OutputFormat, statuses: &[crate::status::CrateStatus])
 fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
-    let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
-
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
-    let statuses = collect_status(&config, &rust_versions, &rust_dir);
+
+    let statuses = match config.settings.sync_mode {
+        SyncMode::Lockfile => {
+            let rust_versions =
+                resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
+            collect_status(&config, &rust_versions, &rust_dir)
+        }
+        SyncMode::LatestDocs => collect_status_latest(&config, &rust_dir),
+    };
+
     print_statuses(format, &statuses)
 }
 
 fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
-    let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
 
-    let statuses = collect_status(&config, &rust_versions, &rust_dir);
+    let statuses = match config.settings.sync_mode {
+        SyncMode::Lockfile => {
+            let rust_versions =
+                resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
+            collect_status(&config, &rust_versions, &rust_dir)
+        }
+        SyncMode::LatestDocs => collect_status_latest(&config, &rust_dir),
+    };
     let failing = statuses
         .iter()
         .any(|s| !matches!(s.status, DocsStatus::Synced | DocsStatus::SyncedFallback));

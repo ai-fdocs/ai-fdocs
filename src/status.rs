@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +47,7 @@ struct MetaFile {
     version: Option<String>,
     is_fallback: Option<bool>,
     fallback: Option<bool>,
+    source_kind: Option<String>,
 }
 
 pub fn collect_status(
@@ -163,7 +164,90 @@ pub fn collect_status(
         .collect()
 }
 
+pub fn collect_status_latest(config: &Config, output_dir: &Path) -> Vec<CrateStatus> {
+    let mut crate_names: Vec<_> = config.crates.keys().cloned().collect();
+    crate_names.sort();
+
+    crate_names
+        .into_iter()
+        .map(|crate_name| {
+            let Some((docs_version, crate_dir)) = discover_existing_dir(output_dir, &crate_name) else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: None,
+                    docs_version: None,
+                    status: DocsStatus::Missing,
+                    reason: "no synced docs found for this crate".to_string(),
+                };
+            };
+
+            let meta_path = crate_dir.join(".aifd-meta.toml");
+            let Ok(meta_raw) = std::fs::read_to_string(&meta_path) else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: None,
+                    docs_version: Some(docs_version),
+                    status: DocsStatus::Corrupted,
+                    reason: ".aifd-meta.toml is missing or unreadable".to_string(),
+                };
+            };
+
+            let Ok(meta) = toml::from_str::<MetaFile>(&meta_raw) else {
+                return CrateStatus {
+                    crate_name,
+                    lock_version: None,
+                    docs_version: Some(docs_version),
+                    status: DocsStatus::Corrupted,
+                    reason: ".aifd-meta.toml has invalid TOML".to_string(),
+                };
+            };
+
+            if let Some(schema_version) = meta.schema_version {
+                if schema_version > 1 {
+                    return CrateStatus {
+                        crate_name,
+                        lock_version: None,
+                        docs_version: Some(docs_version),
+                        status: DocsStatus::Corrupted,
+                        reason: format!(
+                            ".aifd-meta.toml schema version {schema_version} is newer than supported version 1"
+                        ),
+                    };
+                }
+            }
+
+            let is_fallback = meta.is_fallback.or(meta.fallback).unwrap_or(false)
+                || meta
+                    .source_kind
+                    .as_deref()
+                    .is_some_and(|kind| kind == "github_fallback");
+
+            let reason = if is_fallback {
+                "latest-docs synced via GitHub fallback".to_string()
+            } else {
+                "latest-docs up to date".to_string()
+            };
+
+            CrateStatus {
+                crate_name,
+                lock_version: None,
+                docs_version: Some(docs_version),
+                status: if is_fallback {
+                    DocsStatus::SyncedFallback
+                } else {
+                    DocsStatus::Synced
+                },
+                reason,
+            }
+        })
+        .collect()
+}
+
 fn discover_existing_version(output_dir: &Path, crate_name: &str) -> Option<String> {
+    discover_existing_dir(output_dir, crate_name).map(|(version, _)| version)
+}
+
+fn discover_existing_dir(output_dir: &Path, crate_name: &str) -> Option<(String, PathBuf)> {
     let mut versions = Vec::new();
     let prefix = format!("{crate_name}@");
 
@@ -179,11 +263,11 @@ fn discover_existing_version(output_dir: &Path, crate_name: &str) -> Option<Stri
         let dir_name = entry.file_name();
         let dir_name = dir_name.to_string_lossy();
         if let Some(version) = dir_name.strip_prefix(&prefix) {
-            versions.push(version.to_string());
+            versions.push((version.to_string(), entry.path()));
         }
     }
 
-    versions.sort();
+    versions.sort_by(|a, b| a.0.cmp(&b.0));
     versions.pop()
 }
 
@@ -308,7 +392,12 @@ pub fn summarize(statuses: &[CrateStatus]) -> StatusSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_status_json, format_status_table, CrateStatus, DocsStatus};
+    use super::{
+        collect_status_latest, format_status_json, format_status_table, CrateStatus, DocsStatus,
+    };
+    use crate::config::{Config, CrateDoc, Settings};
+    use std::collections::HashMap;
+    use std::fs;
 
     #[test]
     fn formats_empty_status_table_with_zero_summary() {
@@ -358,5 +447,40 @@ mod tests {
         assert!(table.contains("Hint: run `cargo ai-fdocs sync`"));
         assert!(table.contains("CI hint: run `cargo ai-fdocs check`"));
         assert!(table.contains("Problem details:"));
+    }
+
+    #[test]
+    fn collect_status_latest_marks_github_fallback_as_synced_fallback() {
+        let tmp = std::env::temp_dir().join(format!("aifd-status-latest-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("serde@1.0.0")).expect("create crate dir");
+        fs::write(
+            tmp.join("serde@1.0.0/.aifd-meta.toml"),
+            "schema_version = 1\nversion = \"1.0.0\"\nsource_kind = \"github_fallback\"\n",
+        )
+        .expect("write meta");
+
+        let mut crates = HashMap::new();
+        crates.insert(
+            "serde".to_string(),
+            CrateDoc {
+                repo: Some("serde-rs/serde".to_string()),
+                subpath: None,
+                files: None,
+                sources: None,
+                ai_notes: String::new(),
+            },
+        );
+
+        let config = Config {
+            settings: Settings::default(),
+            crates,
+        };
+
+        let statuses = collect_status_latest(&config, tmp.as_path());
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].status, DocsStatus::SyncedFallback);
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }
