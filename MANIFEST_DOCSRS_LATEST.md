@@ -110,6 +110,17 @@
   2) fetch docs from docs.rs;
   3) fallback GitHub (если настроен и docs.rs failed);
   4) save with mode/source meta.
+- [ ] D2.1. Зафиксировать алгоритм ветвления для cache/TTL/upstream/docs.rs:
+  1) Если локальный cache свежий (`now < ttl_expires_at`) и `--force` не задан — использовать локальный snapshot без сети.
+     - Обновления meta: `source_kind` и `fallback_used` не меняются; `upstream_checked_at` не обновляется; `ttl_expires_at` сохраняется прежним.
+  2) Если TTL истёк или задан `--force` — сначала проверить latest version в crates.io, затем принять решение по docs.rs.
+     - Обновления meta: всегда обновить `upstream_checked_at`; пересчитать `ttl_expires_at`; зафиксировать `upstream_latest_version`.
+  3) Если version не изменилась и docs.rs проходит условный check (например, `ETag`/`Last-Modified`/лёгкий HEAD) — полный контент не скачивать.
+     - Обновления meta: `source_kind` остаётся текущим (`docsrs`), `fallback_used` остаётся `false`, обновляются только `upstream_checked_at` и `ttl_expires_at`.
+  4) Если docs.rs недоступен/не готов — выполнить fallback на GitHub и явно пометить это в артефакте и summary.
+     - Обновления meta: `source_kind = "github"`, `fallback_used = true`, обновить `upstream_checked_at` и `ttl_expires_at`.
+  5) Если version изменилась и docs.rs доступен — скачать docs.rs контент полностью и записать новый snapshot.
+     - Обновления meta: `source_kind = "docsrs"`, `fallback_used = false`, обновить `upstream_checked_at` и `ttl_expires_at`.
 - [ ] D3. Сохранить текущую lockfile-логику без regressions.
 - [ ] D4. Учесть параллелизм и лимиты, чтобы не перегружать docs.rs.
 - [ ] D5. Обновить статистику sync-результата по источникам (`docsrs/github/fallback`).
