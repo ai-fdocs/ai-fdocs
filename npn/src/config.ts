@@ -159,7 +159,7 @@ export function loadConfig(projectRoot: string): Config {
   }
 
   const outputDirRaw = settings.output_dir;
-  const outputDir = outputDirRaw === undefined ? "docs/ai/vendor-docs/node" : requireNonEmptyString(outputDirRaw, "settings.output_dir");
+  const outputDir = outputDirRaw === undefined ? "fdocs/node" : requireNonEmptyString(outputDirRaw, "settings.output_dir");
 
   const pruneRaw = settings.prune;
   if (pruneRaw !== undefined && typeof pruneRaw !== "boolean") {

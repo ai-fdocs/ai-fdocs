@@ -6,7 +6,7 @@
 exact dependency versions used in your Rust project.
 
 It syncs README/CHANGELOG/guides from GitHub repositories for versions pinned in
-`Cargo.lock`, then stores them locally under `docs/fdocs` so
+`Cargo.lock`, then stores them locally under `fdocs` so
 Cursor, Copilot, Windsurf, and other assistants can use up-to-date context.
 
 
@@ -101,7 +101,7 @@ cargo install cargo-ai-fdocs
 
 ```toml
 [settings]
-output_dir = "docs/ai/vendor-docs/rust"
+output_dir = "fdocs/rust"
 max_file_size_kb = 200
 prune = true
 sync_concurrency = 8
@@ -120,13 +120,24 @@ ai_notes = "Prefer compile-time checked queries with sqlx::query!"
 3. Sync docs
 
 ```bash
+# one command (auto-init if ai-fdocs.toml is missing)
+./scripts/fdocs-sync.sh
+
+# direct command
 cargo ai-fdocs sync
+```
+
+Cleanup generated docs when needed:
+
+```bash
+./scripts/fdocs-clean.sh        # removes ./fdocs
+./scripts/fdocs-clean.sh fdocs  # custom dir
 ```
 
 By default files are stored in:
 
 ```text
-docs/ai/vendor-docs/rust/
+fdocs/rust/
 ├── _INDEX.md
 ├── axum@<version>/
 │   ├── .aifd-meta.toml
@@ -154,7 +165,7 @@ docs/ai/vendor-docs/rust/
 `ai-fdocs.toml` supports:
 
 - `[settings]`
-  - `output_dir` (default: `docs/ai/vendor-docs/rust`)
+  - `output_dir` (default: `fdocs/rust`)
   - `max_file_size_kb` (default: `200`)
   - `prune` (default: `true`)
   - `sync_concurrency` (default: `8`)
@@ -232,7 +243,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/ai/vendor-docs/rust ai-fdocs.toml
+          git add fdocs/rust ai-fdocs.toml
           git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
 
       - name: Push changes
@@ -285,7 +296,7 @@ Top-level object:
 
 
 For Cursor-like tools, point instructions to:
-- `docs/ai/vendor-docs/rust/_INDEX.md` first,
+- `fdocs/rust/_INDEX.md` first,
 - then the crate folder matching the current lockfile version.
 
 This reduces stale API suggestions and makes generated code more consistent
