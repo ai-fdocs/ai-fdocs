@@ -52,6 +52,9 @@ enum Commands {
     Status {
         #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Sync mode override for status evaluation.
+        #[arg(long, value_enum)]
+        mode: Option<SyncModeArg>,
         /// Output format for status report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
@@ -60,6 +63,9 @@ enum Commands {
     Check {
         #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Sync mode override for check evaluation.
+        #[arg(long, value_enum)]
+        mode: Option<SyncModeArg>,
         /// Output format for check report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
@@ -164,8 +170,16 @@ async fn run(cli: Cli) -> Result<()> {
             mode,
             force,
         } => run_sync(&config, mode, force).await,
-        Commands::Status { config, format } => run_status(&config, format),
-        Commands::Check { config, format } => run_check(&config, format),
+        Commands::Status {
+            config,
+            mode,
+            format,
+        } => run_status(&config, mode, format),
+        Commands::Check {
+            config,
+            mode,
+            format,
+        } => run_check(&config, mode, format),
         Commands::Init { config, force } => run_init_command(&config, force).await,
     }
 }
@@ -627,12 +641,18 @@ fn print_statuses(format: OutputFormat, statuses: &[crate::status::CrateStatus])
     Ok(())
 }
 
-fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
+fn run_status(
+    config_path: &Path,
+    mode_override: Option<SyncModeArg>,
+    format: OutputFormat,
+) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
 
-    let statuses = match config.settings.sync_mode {
+    let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
+
+    let statuses = match sync_mode {
         SyncMode::Lockfile => {
             let rust_versions =
                 resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
@@ -644,12 +664,18 @@ fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
     print_statuses(format, &statuses)
 }
 
-fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
+fn run_check(
+    config_path: &Path,
+    mode_override: Option<SyncModeArg>,
+    format: OutputFormat,
+) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
 
-    let statuses = match config.settings.sync_mode {
+    let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
+
+    let statuses = match sync_mode {
         SyncMode::Lockfile => {
             let rust_versions =
                 resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
@@ -773,6 +799,26 @@ mod tests {
         assert!(mode.is_none(), "sync --mode should be optional");
         let resolved = resolve_sync_mode(mode, SyncMode::Lockfile);
         assert_eq!(resolved, SyncMode::Lockfile);
+    }
+
+    #[test]
+    fn status_mode_defaults_to_none_when_flag_not_provided() {
+        let cli = super::Cli::parse_from(["ai-fdocs", "status"]);
+        let super::Commands::Status { mode, .. } = cli.command else {
+            panic!("expected status command");
+        };
+
+        assert!(mode.is_none(), "status --mode should be optional");
+    }
+
+    #[test]
+    fn check_mode_parses_latest_docs_override() {
+        let cli = super::Cli::parse_from(["ai-fdocs", "check", "--mode", "latest-docs"]);
+        let super::Commands::Check { mode, .. } = cli.command else {
+            panic!("expected check command");
+        };
+
+        assert_eq!(mode, Some(SyncModeArg::LatestDocs));
     }
 
     #[test]
