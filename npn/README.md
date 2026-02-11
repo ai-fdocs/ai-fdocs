@@ -47,7 +47,7 @@ node dist/cli.js --help
 - `ai-fdocs init [--overwrite]`
 - `ai-fdocs sync [--force]`
 - `ai-fdocs status`
-- `ai-fdocs check`
+- `ai-fdocs check [--format text|json]`
 
 ## Roadmap
 

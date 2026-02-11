@@ -22,6 +22,18 @@
 
 ---
 
+## Прогресс по roadmap (с отметками)
+
+- [x] A2.1 Стандартизировать `.aifd-meta.toml` (`schema_version = 2`).
+- [x] A2.3 Стабилизировать `config_hash` (normalize `subpath`, порядок `files`).
+- [x] A3 (частично) Unit-тесты для cache/hash совместимости.
+- [x] B1.1 `check --format json` (machine-readable).
+- [ ] A1 Единая retry/backoff стратегия для сетевых источников.
+- [ ] B1.2 GitHub Actions workflow для `npn/**` + fixture `check` job.
+- [ ] B2 Runbook и token-management рекомендации.
+
+---
+
 ## Milestone A — Stabilize v0.2.x (ближайший)
 
 **Задача:** снять риски по надежности и предсказуемости, не меняя основной UX.
