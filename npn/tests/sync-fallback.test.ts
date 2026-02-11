@@ -40,6 +40,43 @@ function createFixtureRoot(): string {
   return root;
 }
 
+function createMultiFixtureRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "aifd-sync-partial-"));
+  writeFileSync(
+    join(root, "ai-fdocs.toml"),
+    [
+      "[settings]",
+      'output_dir = "docs/ai/vendor-docs/node"',
+      "prune = false",
+      "",
+      "[packages.lodash]",
+      'repo = "lodash/lodash"',
+      "",
+      "[packages.axios]",
+      'repo = "axios/axios"',
+    ].join("\n"),
+    "utf-8"
+  );
+
+  writeFileSync(
+    join(root, "package-lock.json"),
+    JSON.stringify({
+      name: "fixture",
+      lockfileVersion: 3,
+      packages: {
+        "": { name: "fixture", version: "1.0.0" },
+        "node_modules/lodash": { version: "4.17.21" },
+        "node_modules/axios": { version: "1.7.0" },
+      },
+    }),
+    "utf-8"
+  );
+
+  mkdirSync(join(root, "docs/ai/vendor-docs/node"), { recursive: true });
+  return root;
+}
+
+
 describe("cmdSync github fallback", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -137,6 +174,36 @@ describe("cmdSync github fallback", () => {
     expect(report.totals.skipped).toBe(1);
     expect(report.issues[0]).toContain("no files found");
     expect(report.issues[0]).toContain("npm fallback failed (no npm tarball URL)");
+  });
+
+
+  it("keeps best-effort behavior on partial failures", async () => {
+    const root = createMultiFixtureRoot();
+    const logs: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((msg?: unknown) => logs.push(String(msg ?? "")));
+    vi.spyOn(GitHubClient.prototype, "resolveRef").mockImplementation(async (repo: string) => {
+      if (repo === "lodash/lodash") return { gitRef: "v4.17.21", isFallback: false };
+      return { gitRef: "v1.7.0", isFallback: false };
+    });
+    vi.spyOn(GitHubClient.prototype, "fetchDefaultFiles").mockImplementation(async (repo: string) => {
+      if (repo === "lodash/lodash") {
+        throw new AiDocsError("rate limited", "GITHUB_RATE_LIMIT");
+      }
+      return [{ path: "README.md", content: "# axios docs" }];
+    });
+    vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue(null);
+
+    await cmdSync(root, false, "json");
+
+    const report = JSON.parse(logs.at(-1) ?? "{}");
+    expect(report.totals.synced).toBe(1);
+    expect(report.totals.errors).toBe(1);
+    expect(report.errorCodes).toEqual({ GITHUB_RATE_LIMIT: 1 });
+
+    const index = readFileSync(join(root, "docs/ai/vendor-docs/node/_INDEX.md"), "utf-8");
+    expect(index).toContain("[axios@1.7.0](axios@1.7.0/_SUMMARY.md)");
+    expect(index).not.toContain("lodash@4.17.21");
   });
 
 });
