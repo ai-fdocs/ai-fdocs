@@ -11,8 +11,6 @@ import { generateSummary, type SummaryFile } from "../summary.js";
 import { NpmRegistryClient } from "../registry.js";
 import { AiDocsError } from "../error.js";
 
-const MAX_CONCURRENT = 8;
-
 type SyncSource = "github" | "npm_tarball";
 
 interface SyncTaskResult {
@@ -166,7 +164,7 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
   const github = new GitHubClient();
   const npmRegistry = new NpmRegistryClient();
   const entries = Object.entries(config.packages);
-  const limit = pLimit(MAX_CONCURRENT);
+  const limit = pLimit(config.settings.sync_concurrency);
   const selectedSource: SyncSource = config.settings.docs_source;
 
   const tasks = entries.map(([name, pkgConfig]) =>

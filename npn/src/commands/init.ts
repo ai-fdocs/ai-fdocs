@@ -87,7 +87,8 @@ export async function cmdInit(projectRoot: string, overwrite: boolean): Promise<
   toml += "[settings]\n";
   toml += 'output_dir = "docs/ai/vendor-docs/node"\n';
   toml += "prune = true\n";
-  toml += "max_file_size_kb = 512\n\n";
+  toml += "max_file_size_kb = 512\n";
+  toml += "sync_concurrency = 8\n\n";
   toml += "# Docs source strategy for npm version (github|npm_tarball).\n";
   toml += "docs_source = \"npm_tarball\"\n\n";
 

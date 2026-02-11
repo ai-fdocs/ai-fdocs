@@ -18,7 +18,6 @@ describe("loadConfig docs_source", () => {
     expect(cfg.settings.docs_source).toBe("npm_tarball");
   });
 
-
   it("uses explicit docs_source when provided", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
     writeFileSync(
@@ -42,6 +41,27 @@ describe("loadConfig docs_source", () => {
     const load = () => loadConfig(root);
     expect(load).toThrowError(AiDocsError);
     expect(load).toThrowError(/settings\.docs_source must be "github" or "npm_tarball"/);
+  });
+
+  it("uses default sync_concurrency=8", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(join(root, "ai-fdocs.toml"), ['[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"), "utf-8");
+
+    const cfg = loadConfig(root);
+    expect(cfg.settings.sync_concurrency).toBe(8);
+  });
+
+  it("fails fast on invalid sync_concurrency", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'sync_concurrency = 0', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
   });
 
   it("keeps backward compatibility with legacy experimental_npm_tarball=false", () => {

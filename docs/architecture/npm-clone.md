@@ -100,7 +100,7 @@ If `settings.docs_source = "npm_tarball"` (default):
 ## 4.1 Concurrency
 
 - `sync` uses `p-limit`.
-- Hard cap: `MAX_CONCURRENT = 8` (code constant, aligned with Rust default concurrency).
+- Concurrency cap comes from `settings.sync_concurrency` (default `8`).
 
 ## 4.2 Delays/throttling
 
@@ -131,6 +131,7 @@ What it does:
    - `output_dir = "docs/ai/vendor-docs/node"`
    - `prune = true`
    - `max_file_size_kb = 512`
+   - `sync_concurrency = 8`
    - `docs_source = "npm_tarball"`
 
 ## `ai-fdocs sync [--force]`
@@ -181,6 +182,7 @@ Additional output:
 - `output_dir` (default `docs/ai/vendor-docs/node`)
 - `prune` (default `true`)
 - `max_file_size_kb` (default `512`)
+- `sync_concurrency` (default `8`, must be > 0)
 - `docs_source` (`npm_tarball` by default, can be `github`)
 
 `[packages.<name>]`:

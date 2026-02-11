@@ -17,6 +17,7 @@ export interface Config {
     output_dir: string;
     prune: boolean;
     max_file_size_kb: number;
+    sync_concurrency: number;
     docs_source: DocsSource;
   };
   packages: Record<string, PackageConfig>;
@@ -46,11 +47,20 @@ export function loadConfig(projectRoot: string): Config {
   const hasLegacyExperimental = Object.prototype.hasOwnProperty.call(settings, "experimental_npm_tarball");
   const legacyExperimental = Boolean(settings.experimental_npm_tarball ?? false);
 
+  const syncConcurrency = Number(settings.sync_concurrency ?? 8);
+  if (!Number.isInteger(syncConcurrency) || syncConcurrency <= 0) {
+    throw new AiDocsError(
+      `settings.sync_concurrency must be a positive integer, got: ${String(settings.sync_concurrency)}`,
+      "INVALID_CONFIG"
+    );
+  }
+
   return {
     settings: {
       output_dir: String(settings.output_dir ?? "docs/ai/vendor-docs/node"),
       prune: Boolean(settings.prune ?? true),
       max_file_size_kb: Number(settings.max_file_size_kb ?? 512),
+      sync_concurrency: syncConcurrency,
       docs_source: docsSource ?? (hasLegacyExperimental ? (legacyExperimental ? "npm_tarball" : "github") : "npm_tarball"),
     },
     packages,
