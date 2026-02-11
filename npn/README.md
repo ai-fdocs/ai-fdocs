@@ -11,16 +11,43 @@ Node.js/TypeScript version of `ai-fdocs` with core feature parity for Rust v0.2:
 
 ## Docs source mode
 
-By default, documentation is fetched from the npm tarball (`docs_source = "npm_tarball"`).
+ADR-0001 fixed the default source strategy to **`npm_tarball`**.
 
-You can explicitly select the source strategy:
+### Default behavior
+
+If `docs_source` is not set, `npm-ai-fdocs` uses:
 
 ```toml
 [settings]
-docs_source = "npm_tarball" # or "github"
+docs_source = "npm_tarball"
 ```
 
-For backward compatibility, legacy `experimental_npm_tarball` is still accepted.
+This mode is recommended for stable CI behavior and release-aligned docs collection.
+
+### Explicit source examples
+
+Use npm tarball explicitly:
+
+```toml
+[settings]
+docs_source = "npm_tarball"
+```
+
+Use GitHub explicitly:
+
+```toml
+[settings]
+docs_source = "github"
+```
+
+### Fallback and degraded behavior
+
+- `sync` is **best-effort**: one package source failure should not abort the whole run;
+- already downloaded docs are preserved in cache when a source is temporarily unavailable;
+- `status` / `check` report drift and errors for affected packages;
+- in `github` mode, branch fallback (`main`/`master`) remains enabled where applicable.
+
+For backward compatibility, legacy `experimental_npm_tarball` is still accepted and treated as `docs_source = "npm_tarball"`.
 
 ## Safety and degraded-source behavior
 
@@ -60,3 +87,7 @@ ADR по выбору default source: [`docs/adr/0001-docs-source-strategy.md`](
 ## Runbook
 
 Operational troubleshooting and CI guidance: [`RUNBOOK.md`](./RUNBOOK.md).
+
+## Migration notes
+
+Migration guidance for existing configs (`docs_source`, legacy `experimental_npm_tarball`): [`MIGRATION.md`](./MIGRATION.md).
