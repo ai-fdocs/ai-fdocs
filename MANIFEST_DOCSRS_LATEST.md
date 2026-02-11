@@ -11,6 +11,9 @@
   - fallback: GitHub (README/CHANGELOG/guides), если docs.rs ещё не готов или недоступен.
 
 ---
+## Быстрый план запуска
+
+Для стартовой интеграционной фазы см. [`docs/DOCSRS_INTEGRATION_PLAN.md`](./docs/DOCSRS_INTEGRATION_PLAN.md).
 
 ## 1) Definition of Success (что считаем «интеграция работает»)
 
