@@ -133,6 +133,9 @@
 
 ---
 
+
+ADR с формальным выбором default source: [`docs/adr/0001-docs-source-strategy.md`](./docs/adr/0001-docs-source-strategy.md).
+
 ## Milestone D — v1.0 release
 
 **Задача:** стабилизировать API/поведение и подготовить перенос в отдельный репозиторий.
