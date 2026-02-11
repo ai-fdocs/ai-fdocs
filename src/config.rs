@@ -159,6 +159,12 @@ impl Config {
             ));
         }
 
+        if self.settings.max_file_size_kb == 0 {
+            return Err(AiDocsError::InvalidConfig(
+                "settings.max_file_size_kb must be greater than 0".to_string(),
+            ));
+        }
+
         for (crate_name, crate_cfg) in &self.crates {
             if crate_cfg.github_repo().is_none() {
                 return Err(AiDocsError::InvalidConfig(format!(
@@ -186,6 +192,34 @@ mod tests {
 
         assert!(config.crates.contains_key("serde"));
         assert!(config.crates.contains_key("sqlx"));
+    }
+
+    #[test]
+    fn config_with_zero_max_file_size_fails_validation() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("ai-fdocs-invalid-max-file-size-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+max_file_size_kb = 0
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("zero max_file_size_kb must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err
+            .to_string()
+            .contains("settings.max_file_size_kb must be greater than 0"));
     }
 
     #[test]

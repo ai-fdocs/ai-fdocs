@@ -47,6 +47,22 @@ export function loadConfig(projectRoot: string): Config {
   const hasLegacyExperimental = Object.prototype.hasOwnProperty.call(settings, "experimental_npm_tarball");
   const legacyExperimental = Boolean(settings.experimental_npm_tarball ?? false);
 
+  const rawMaxFileSizeKb = settings.max_file_size_kb;
+  if (rawMaxFileSizeKb !== undefined && typeof rawMaxFileSizeKb !== "number") {
+    throw new AiDocsError(
+      `settings.max_file_size_kb must be a positive integer, got: ${String(rawMaxFileSizeKb)}`,
+      "INVALID_CONFIG"
+    );
+  }
+
+  const maxFileSizeKb = rawMaxFileSizeKb === undefined ? 512 : rawMaxFileSizeKb;
+  if (!Number.isInteger(maxFileSizeKb) || maxFileSizeKb <= 0) {
+    throw new AiDocsError(
+      `settings.max_file_size_kb must be a positive integer, got: ${String(rawMaxFileSizeKb)}`,
+      "INVALID_CONFIG"
+    );
+  }
+
   const rawSyncConcurrency = settings.sync_concurrency;
   if (rawSyncConcurrency !== undefined && typeof rawSyncConcurrency !== "number") {
     throw new AiDocsError(
@@ -67,7 +83,7 @@ export function loadConfig(projectRoot: string): Config {
     settings: {
       output_dir: String(settings.output_dir ?? "docs/ai/vendor-docs/node"),
       prune: Boolean(settings.prune ?? true),
-      max_file_size_kb: Number(settings.max_file_size_kb ?? 512),
+      max_file_size_kb: maxFileSizeKb,
       sync_concurrency: syncConcurrency,
       docs_source: docsSource ?? (hasLegacyExperimental ? (legacyExperimental ? "npm_tarball" : "github") : "npm_tarball"),
     },

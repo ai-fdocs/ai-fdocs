@@ -43,6 +43,30 @@ describe("loadConfig settings validation", () => {
     expect(load).toThrowError(/settings\.docs_source must be "github" or "npm_tarball"/);
   });
 
+
+
+  it("uses default max_file_size_kb=512", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(join(root, "ai-fdocs.toml"), ['[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"), "utf-8");
+
+    const cfg = loadConfig(root);
+    expect(cfg.settings.max_file_size_kb).toBe(512);
+  });
+
+  it("fails fast on invalid max_file_size_kb", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'max_file_size_kb = 0', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const load = () => loadConfig(root);
+    expect(load).toThrowError(AiDocsError);
+    expect(load).toThrowError(/settings\.max_file_size_kb must be a positive integer/);
+  });
+
+
   it("uses default sync_concurrency=8", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
     writeFileSync(join(root, "ai-fdocs.toml"), ['[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"), "utf-8");

@@ -181,7 +181,7 @@ Additional output:
 
 - `output_dir` (default `docs/ai/vendor-docs/node`)
 - `prune` (default `true`)
-- `max_file_size_kb` (default `512`)
+- `max_file_size_kb` (default `512`, must be > 0)
 - `sync_concurrency` (default `8`, must be > 0)
 - `docs_source` (`npm_tarball` by default, can be `github`)
 

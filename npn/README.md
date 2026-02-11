@@ -3,7 +3,7 @@
 Node.js/TypeScript version of `ai-fdocs` with core feature parity for Rust v0.2:
 
 - `init` from `package.json` (direct dependencies) + npm registry;
-- `sync` with parallel downloads (`settings.sync_concurrency`, default `8`);
+- `sync` with parallel downloads (`settings.sync_concurrency`, default `8`, must be > 0);
 - `check` for CI (exit code 0/1);
 - `_SUMMARY.md` in each package folder;
 - `config_hash` for automatic cache invalidation;
