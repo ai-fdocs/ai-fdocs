@@ -45,10 +45,16 @@ node dist/cli.js --help
 ## Commands
 
 - `ai-fdocs init [--overwrite]`
-- `ai-fdocs sync [--force]`
+- `ai-fdocs sync [--force] [--report-format text|json]`
+  - `--report-format json` prints JSON-only output (no extra log lines).
 - `ai-fdocs status`
-- `ai-fdocs check`
+- `ai-fdocs check [--format text|json]`
 
 ## Roadmap
 
 Detailed roadmap: [`ROADMAP.md`](./ROADMAP.md).
+
+
+## Runbook
+
+Operational troubleshooting and CI guidance: [`RUNBOOK.md`](./RUNBOOK.md).
