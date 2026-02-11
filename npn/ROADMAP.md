@@ -29,7 +29,7 @@
 - [x] A3 (частично) Unit-тесты для cache/hash совместимости.
 - [x] B1.1 `check --format json` (machine-readable).
 - [x] A1 (частично) Добавлен общий retry/backoff + классификация HTTP ошибок в network-слое.
-- [ ] B1.2 GitHub Actions workflow для `npn/**` + fixture `check` job.
+- [x] B1.2 GitHub Actions workflow для `npn/**` + fixture `check` job.
 - [ ] B2 Runbook и token-management рекомендации.
 
 ---
