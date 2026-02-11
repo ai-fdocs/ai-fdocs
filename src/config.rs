@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use serde::de::{self, Deserializer};
 use serde::Deserialize;
 
 use crate::error::{AiDocsError, Result};
@@ -14,10 +15,24 @@ pub struct Config {
     pub crates: HashMap<String, CrateDoc>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocsSource {
-    #[serde(rename = "github")]
     GitHub,
+}
+
+impl<'de> Deserialize<'de> for DocsSource {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        match value.as_str() {
+            "github" => Ok(Self::GitHub),
+            _ => Err(de::Error::custom(format!(
+                "settings.docs_source must be \"github\", got: {value}"
+            ))),
+        }
+    }
 }
 
 const fn default_docs_source() -> DocsSource {
@@ -223,9 +238,9 @@ repo = "serde-rs/serde"
         let err = Config::load(&path).expect_err("invalid docs_source must fail");
         fs::remove_file(&path).expect("must cleanup temporary config");
 
-        assert!(
-            err.to_string().contains("unknown variant") || err.to_string().contains("docs_source")
-        );
+        assert!(err
+            .to_string()
+            .contains("settings.docs_source must be \"github\", got: npm_tarball"));
     }
 
     #[test]
