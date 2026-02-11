@@ -50,5 +50,6 @@ describe("sync summaries", () => {
     expect(report.totals).toEqual({ synced: 0, cached: 1, skipped: 1, errors: 1 });
     expect(report.sourceStats.github.errors).toBe(1);
     expect(report.errorCodes).toEqual({ GITHUB_AUTH: 1 });
+    expect(report.issues).toEqual([]);
   });
 });

@@ -40,6 +40,7 @@ export interface SyncReport {
   };
   sourceStats: Record<SyncSource, SourceStat>;
   errorCodes: Record<string, number>;
+  issues: string[];
 }
 
 export function summarizeSourceStats(results: SyncTaskResult[]): Record<SyncSource, SourceStat> {
@@ -79,6 +80,10 @@ export function buildSyncReport(results: SyncTaskResult[], source: SyncSource): 
     },
     sourceStats: summarizeSourceStats(results),
     errorCodes: summarizeErrorCodes(results),
+    issues: results
+      .filter((r) => r.status === "error" || r.status === "skipped")
+      .map((r) => r.message)
+      .filter((msg): msg is string => Boolean(msg && msg.length > 0)),
   };
 }
 
@@ -119,14 +124,16 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
   if (reportFormat !== "text" && reportFormat !== "json") {
     throw new AiDocsError(`Unsupported --report-format value: ${reportFormat}`, "INVALID_FORMAT");
   }
-  console.log(chalk.blue(`Starting sync (v0.2)...${force ? " (force mode)" : ""}`));
+  const jsonMode = reportFormat === "json";
+
+  if (!jsonMode) console.log(chalk.blue(`Starting sync (v0.2)...${force ? " (force mode)" : ""}`));
 
   const config = loadConfig(projectRoot);
   const lockVersions = resolveVersions(projectRoot);
   const outputDir = join(projectRoot, config.settings.output_dir);
 
   if (config.settings.prune) {
-    console.log(chalk.gray("Pruning outdated docs..."));
+    if (!jsonMode) console.log(chalk.gray("Pruning outdated docs..."));
     prune(outputDir, config, lockVersions);
   }
 
@@ -201,7 +208,8 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
         fetchedFiles,
         pkgConfig,
         config.settings.max_file_size_kb,
-        configHash
+        configHash,
+        jsonMode
       );
 
       const pkgDir = join(outputDir, `${name}@${version}`);
@@ -241,10 +249,10 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
   const savedPackages: SavedPackage[] = [];
   for (const result of results) {
     if (result.saved) savedPackages.push(result.saved);
-    if (result.status === "skipped") {
+    if (!jsonMode && result.status === "skipped") {
       console.log(chalk.yellow(`  ⏭ ${result.message}`));
     }
-    if (result.status === "error") {
+    if (!jsonMode && result.status === "error") {
       console.log(chalk.red(`  ❌ ${result.message}`));
     }
   }
