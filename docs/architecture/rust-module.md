@@ -185,7 +185,7 @@ What it does:
 - `docs_source` (default `github`)
 - `sync_mode` (`lockfile` default, or `latest_docs`/`latest-docs`)
 - `latest_ttl_hours` (default `24`; latest-docs cache freshness)
-- `docsrs_single_page` (default `true`; docs.rs extraction strategy flag)
+- `docsrs_single_page` (default `true`; docs.rs extraction strategy flag; current runtime supports only `true`)
 
 ## 6.2 Per-crate settings (`[crates.<name>]`)
 

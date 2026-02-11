@@ -222,6 +222,12 @@ impl Config {
             ));
         }
 
+        if !self.settings.docsrs_single_page {
+            return Err(AiDocsError::InvalidConfig(
+                "settings.docsrs_single_page=false is not supported yet; use true".to_string(),
+            ));
+        }
+
         let require_github_repo = matches!(self.settings.sync_mode, SyncMode::Lockfile);
         if require_github_repo {
             for (crate_name, crate_cfg) in &self.crates {
@@ -533,5 +539,33 @@ repo = "serde-rs/serde"
         assert!(err
             .to_string()
             .contains("settings.latest_ttl_hours must be greater than 0"));
+    }
+
+    #[test]
+    fn config_with_docsrs_single_page_false_fails_validation() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("ai-fdocs-invalid-docsrs-single-page-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+docsrs_single_page = false
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let err = Config::load(&path).expect_err("docsrs_single_page=false must fail");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert!(err
+            .to_string()
+            .contains("settings.docsrs_single_page=false is not supported yet; use true"));
     }
 }

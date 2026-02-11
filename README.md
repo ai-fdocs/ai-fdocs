@@ -197,7 +197,7 @@ fdocs/rust/
   - `docs_source` (default: `"github"`)
   - `sync_mode` (default: `"lockfile"`, also supports `"latest_docs"` / `"latest-docs"`)
   - `latest_ttl_hours` (default: `24`, used in `latest_docs` mode)
-  - `docsrs_single_page` (default: `true`, latest-docs parser strategy flag)
+  - `docsrs_single_page` (default: `true`, latest-docs parser strategy flag; `false` is not supported yet in current stage)
 
 - `[crates.<name>]`
   - `repo` (recommended, `owner/repo`)
