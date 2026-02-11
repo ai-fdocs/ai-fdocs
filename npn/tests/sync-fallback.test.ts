@@ -206,4 +206,21 @@ describe("cmdSync github fallback", () => {
     expect(index).not.toContain("lodash@4.17.21");
   });
 
+
+  it("does not re-run npm fallback after it already returned empty files", async () => {
+    const root = createFixtureRoot();
+    const logs: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((msg?: unknown) => logs.push(String(msg ?? "")));
+    vi.spyOn(GitHubClient.prototype, "resolveRef").mockRejectedValue(new AiDocsError("No suitable git ref found", "NO_REF"));
+    const tarballUrlSpy = vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue("https://registry.example/lodash.tgz");
+    vi.spyOn(fetcher, "fetchDocsFromNpmTarball").mockResolvedValue([]);
+
+    await cmdSync(root, false, "json");
+
+    const report = JSON.parse(logs.at(-1) ?? "{}");
+    expect(report.totals.skipped).toBe(1);
+    expect(tarballUrlSpy).toHaveBeenCalledTimes(1);
+  });
+
 });

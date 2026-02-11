@@ -186,8 +186,11 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
       let fetchedFiles: FetchedFile[] | null = null;
       let resolved = { gitRef: "npm-tarball", isFallback: false };
       let taskSource: SyncSource = selectedSource;
+      let npmFallbackAttempted = false;
+      let lastFallbackError: { message: string; code?: string } | null = null;
 
       if (selectedSource === "npm_tarball") {
+        npmFallbackAttempted = true;
         const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
         if ("error" in tarball) {
           return {
@@ -204,8 +207,10 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
           resolved = await github.resolveRef(pkgConfig.repo, name, version);
         } catch (e) {
           const primaryErr = toErrorInfo(e);
+          npmFallbackAttempted = true;
           const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
           if ("error" in tarball) {
+            lastFallbackError = tarball.error;
             return {
               saved: null,
               status: "error",
@@ -227,8 +232,10 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
               : await github.fetchDefaultFiles(pkgConfig.repo, resolved.gitRef, pkgConfig.subpath);
           } catch (e) {
             const primaryErr = toErrorInfo(e);
+            npmFallbackAttempted = true;
             const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
             if ("error" in tarball) {
+              lastFallbackError = tarball.error;
               return {
                 saved: null,
                 status: "error",
@@ -248,7 +255,8 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
       if (!fetchedFiles || fetchedFiles.length === 0) {
         let emptyFallbackError: { message: string; code?: string } | null = null;
 
-        if (selectedSource === "github") {
+        if (selectedSource === "github" && !npmFallbackAttempted) {
+          npmFallbackAttempted = true;
           const tarball = await tryFetchFromNpmTarball(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
           if (!("error" in tarball) && tarball.files.length > 0) {
             fetchedFiles = tarball.files;
@@ -256,11 +264,13 @@ export async function cmdSync(projectRoot: string, force: boolean, reportFormat:
             resolved = { gitRef: "npm-tarball", isFallback: false };
           } else if ("error" in tarball) {
             emptyFallbackError = tarball.error;
+            lastFallbackError = tarball.error;
           }
         }
 
         if (!fetchedFiles || fetchedFiles.length === 0) {
-          const details = emptyFallbackError ? `; npm fallback failed (${emptyFallbackError.message})` : "";
+          const fallbackError = emptyFallbackError ?? lastFallbackError;
+          const details = fallbackError ? `; npm fallback failed (${fallbackError.message})` : "";
           return { saved: null, status: "skipped", source: taskSource, message: `${name}@${version}: no files found${details}` };
         }
       }
