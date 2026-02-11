@@ -64,7 +64,6 @@ describe("loadConfig settings validation", () => {
     expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
   });
 
-
   it("fails fast on non-integer sync_concurrency", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
     writeFileSync(
@@ -91,8 +90,6 @@ describe("loadConfig settings validation", () => {
     expect(load).toThrowError(/settings\.sync_concurrency must be a positive integer/);
   });
 
-
-
   it("fails fast on string sync_concurrency (no implicit coercion)", () => {
     const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
     writeFileSync(
@@ -116,4 +113,36 @@ describe("loadConfig settings validation", () => {
     const cfg = loadConfig(root);
     expect(cfg.settings.docs_source).toBe("github");
   });
+
+  it("keeps backward compatibility with legacy experimental_npm_tarball=true", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      ['[settings]', 'experimental_npm_tarball = true', '', '[packages.lodash]', 'repo = "lodash/lodash"'].join("\n"),
+      "utf-8"
+    );
+
+    const cfg = loadConfig(root);
+    expect(cfg.settings.docs_source).toBe("npm_tarball");
+  });
+
+  it("prefers explicit docs_source over legacy experimental_npm_tarball", () => {
+    const root = mkdtempSync(join(tmpdir(), "aifd-config-"));
+    writeFileSync(
+      join(root, "ai-fdocs.toml"),
+      [
+        '[settings]',
+        'docs_source = "github"',
+        'experimental_npm_tarball = true',
+        '',
+        '[packages.lodash]',
+        'repo = "lodash/lodash"',
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const cfg = loadConfig(root);
+    expect(cfg.settings.docs_source).toBe("github");
+  });
+
 });
