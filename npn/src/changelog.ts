@@ -23,35 +23,30 @@ export function truncateChangelog(content: string, currentVersion: string): stri
   };
 
   const currentMinor = parseMinor(currentVersion);
-  let foundCurrent = false;
-  let foundPreviousMinor = false;
+  let previousMinor: string | null = null;
   let cutPosition: number | null = null;
 
   for (const item of matches) {
     const verMinor = parseMinor(item.version);
 
-    if (item.version === currentVersion) {
-      foundCurrent = true;
+    if (verMinor === currentMinor) {
       continue;
     }
 
-    if (foundCurrent && !foundPreviousMinor) {
-      if (verMinor !== currentMinor || currentMinor === null) {
-        foundPreviousMinor = true;
-        continue;
-      }
+    if (previousMinor === null) {
+      previousMinor = verMinor;
       continue;
     }
 
-    if (foundPreviousMinor) {
+    if (verMinor !== previousMinor) {
       cutPosition = item.pos;
       break;
     }
   }
 
-  // Fallback if current version not found in headings
-  if (!foundCurrent && matches.length > 2) {
-    cutPosition = matches[2].pos;
+  // Fallback if we have many versions but couldn't find a cut point via minor versions
+  if (cutPosition === null && matches.length > 5) {
+    cutPosition = matches[5].pos;
   }
 
   if (cutPosition !== null) {

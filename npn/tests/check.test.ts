@@ -35,7 +35,7 @@ describe("check report", () => {
 
     mkdirSync(join(root, "fdocs/node"), { recursive: true });
 
-    const report = buildCheckReport(root);
+    const report = await buildCheckReport(root);
 
     expect(report.ok).toBe(false);
     expect(report.issues).toEqual([{ name: "lodash", kind: "missing" }]);
