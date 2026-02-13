@@ -7,6 +7,8 @@ import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import remarkStringify from "remark-stringify";
 import TurndownService from "turndown";
+import jsdoc2md from "jsdoc-to-markdown";
+import { readdirSync } from "node:fs";
 
 export interface ConsolidationOptions {
     includeChangelog: boolean;
@@ -64,6 +66,22 @@ export async function generateConsolidatedDoc(pkgDir: string, data: SummaryData,
             content += `## README\n\n`;
             let readmeContent = readFileSync(readmePath, "utf-8");
             content += `${readmeContent}\n\n`;
+        }
+    } else {
+        // Fallback: JSDoc to Markdown
+        try {
+            const files = readdirSync(pkgDir);
+            const sourceFiles = files.filter(f => f.endsWith(".ts") || f.endsWith(".js"));
+            if (sourceFiles.length > 0) {
+                const sourcePaths = sourceFiles.map(f => join(pkgDir, f));
+                const jsdocContent = await jsdoc2md.render({ files: sourcePaths });
+                if (jsdocContent) {
+                    content += `## Documentation (Generated from JSDoc)\n\n`;
+                    content += `${jsdocContent}\n\n`;
+                }
+            }
+        } catch (e) {
+            // Ignore JSDoc generation errors, it's a best-effort fallback
         }
     }
 
