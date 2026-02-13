@@ -1,7 +1,7 @@
 export function truncateChangelog(content: string, currentVersion: string): string {
   // Regex to match markdown headings with versions, e.g., "## [1.2.3]", "### v1.2.3", "## 1.2.3 - 2024-01-01"
   // Captures the version string in the first group
-  const headingRe = /^(?:#{1,3})\s+.*?\b?\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?)\]?\b/gm;
+  const headingRe = /^(?:#{1,3})\s+.*?\b\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?)\]?\b/gm;
 
   const matches: Array<{ pos: number; version: string }> = [];
   let match: RegExpExecArray | null;

@@ -120,7 +120,7 @@ export function savePackageFiles(
     content = truncateIfNeeded(content, maxFileSizeKb);
 
     if (shouldInjectHeader(file.path)) {
-      content = injectHeader(content, pkgConfig.repo, resolved.gitRef, file.path, resolved.isFallback, version);
+      content = injectHeader(content, pkgConfig.repo || "", resolved.gitRef, file.path, resolved.isFallback, version);
     }
 
     writeFileSync(join(pkgDir, flatName), content, "utf-8");
