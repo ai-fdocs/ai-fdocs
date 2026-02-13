@@ -29,9 +29,21 @@ pub struct CrateMeta {
     #[serde(default)]
     pub docsrs_input_url: Option<String>,
     #[serde(default)]
+    pub docsrs_canonical_base_url: Option<String>,
+    #[serde(default)]
     pub upstream_latest_version: Option<String>,
     #[serde(default)]
+    pub upstream_checked_at: Option<String>,
+    #[serde(default)]
+    pub ttl_expires_at: Option<String>,
+    #[serde(default)]
     pub truncated: Option<bool>,
+    #[serde(default)]
+    pub truncation_marker: Option<String>,
+    #[serde(default)]
+    pub artifact_sha256: Option<String>,
+    #[serde(default)]
+    pub artifact_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,8 +161,7 @@ fn latest_docs_summary_provenance(
 
     lines.push(format!("- Truncated: `{truncated}`"));
     lines.join(
-        "
-",
+        "\n",
     )
 }
 
@@ -194,23 +205,20 @@ fn should_inject_header(file_path: &str) -> bool {
     })
 }
 
-fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
-    idx = idx.min(s.len());
-    while idx > 0 && !s.is_char_boundary(idx) {
-        idx -= 1;
-    }
-    idx
-}
 
-fn truncate_if_needed(content: &str, max_size_kb: usize) -> String {
+
+pub fn truncate_if_needed(content: &str, max_size_kb: usize) -> (String, bool) {
     let max_bytes = max_size_kb * 1024;
     if content.len() <= max_bytes {
-        return content.to_string();
+        return (content.to_string(), false);
     }
 
-    let boundary = floor_char_boundary(content, max_bytes);
+    let boundary = crate::utils::floor_char_boundary(content, max_bytes);
     let truncated = &content[..boundary];
-    format!("{truncated}\n\n[TRUNCATED by ai-fdocs at {max_size_kb}KB]\n")
+    (
+        format!("{truncated}\n\n[TRUNCATED by ai-fdocs at {max_size_kb}KB]\n"),
+        true,
+    )
 }
 
 fn load_meta_with_migration(meta_path: &Path) -> Option<CrateMeta> {
@@ -284,6 +292,14 @@ pub fn save_crate_files(
 
     let mut saved_names = Vec::new();
 
+    let mut total_bytes = 0;
+    let mut any_truncated = false;
+    
+    // For GitHub we don't have a single artifact but multiple files.
+    // We'll calculate a combined SHA256 of all file contents for consistency.
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+
     for file in req.fetched_files {
         let flat_name = flatten_filename(&file.path);
         let mut content = file.content.clone();
@@ -292,7 +308,11 @@ pub fn save_crate_files(
             content = changelog::truncate_changelog(&content, req.version);
         }
 
-        content = truncate_if_needed(&content, save_ctx.max_file_size_kb);
+        let (truncated_content, is_truncated) = truncate_if_needed(&content, save_ctx.max_file_size_kb);
+        content = truncated_content;
+        if is_truncated {
+            any_truncated = true;
+        }
 
         if should_inject_header(&file.path) {
             content = inject_header(
@@ -307,10 +327,17 @@ pub fn save_crate_files(
         }
 
         let file_path = crate_dir.join(&flat_name);
-        fs::write(&file_path, &content)?;
+        let content_bytes = content.as_bytes();
+        fs::write(&file_path, content_bytes)?;
+        
+        hasher.update(content_bytes);
+        total_bytes += content_bytes.len();
+        
         debug!("Saved: {:?}", file_path);
         saved_names.push(flat_name);
     }
+
+    let artifact_sha256 = format!("{:x}", hasher.finalize());
 
     let meta = CrateMeta {
         schema_version: META_SCHEMA_VERSION,
@@ -322,8 +349,14 @@ pub fn save_crate_files(
         source_kind: Some(save_ctx.source_kind.to_string()),
         artifact_path: save_ctx.artifact_path.map(str::to_string),
         docsrs_input_url: save_ctx.docsrs_input_url.map(str::to_string),
+        docsrs_canonical_base_url: None, // Will be filled when needed
         upstream_latest_version: save_ctx.upstream_latest_version.map(str::to_string),
-        truncated: save_ctx.truncated,
+        upstream_checked_at: Some(Utc::now().format("%Y-%m-%d").to_string()),
+        ttl_expires_at: None, // Calculated by orchestrator
+        truncated: Some(any_truncated),
+        truncation_marker: if any_truncated { Some(format!("[TRUNCATED by ai-fdocs at {}KB]", save_ctx.max_file_size_kb)) } else { None },
+        artifact_sha256: Some(artifact_sha256),
+        artifact_bytes: Some(total_bytes),
     };
 
     save_meta(&crate_dir.join(".aifd-meta.toml"), &meta)?;
@@ -380,6 +413,12 @@ pub fn save_latest_api_markdown(
 
     fs::write(crate_dir.join("API.md"), api_markdown)?;
 
+    // Calculate SHA256
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(api_markdown.as_bytes());
+    let sha256 = format!("{:x}", hasher.finalize());
+
     let meta = CrateMeta {
         schema_version: META_SCHEMA_VERSION,
         version: version.to_string(),
@@ -390,8 +429,14 @@ pub fn save_latest_api_markdown(
         source_kind: Some("docsrs".to_string()),
         artifact_path: Some("API.md".to_string()),
         docsrs_input_url: Some(docsrs_input_url.to_string()),
+        docsrs_canonical_base_url: Some(format!("https://docs.rs/{crate_name}/{version}")),
         upstream_latest_version: Some(version.to_string()),
+        upstream_checked_at: Some(Utc::now().format("%Y-%m-%d").to_string()),
+        ttl_expires_at: None, // Default TTL handled by status logic
         truncated: Some(truncated),
+        truncation_marker: if truncated { Some(format!("[TRUNCATED by ai-fdocs at {}KB]", crate_config.max_file_size_kb)) } else { None }, // Fixed marker logic
+        artifact_sha256: Some(sha256),
+        artifact_bytes: Some(api_markdown.len()),
     };
 
     save_meta(&crate_dir.join(".aifd-meta.toml"), &meta)?;

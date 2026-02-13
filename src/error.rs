@@ -72,6 +72,7 @@ impl AiDocsError {
                 SyncErrorKind::NotFound
             }
             Self::HttpStatus { status, .. } if *status == 404 => SyncErrorKind::NotFound,
+            Self::HttpStatus { status, .. } if *status >= 500 => SyncErrorKind::Network,
             _ => SyncErrorKind::Other,
         }
     }

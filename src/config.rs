@@ -210,6 +210,12 @@ impl Config {
             ));
         }
 
+        if self.settings.sync_concurrency > 50 {
+            return Err(AiDocsError::InvalidConfig(
+                "settings.sync_concurrency must not exceed 50 to avoid rate limiting".to_string(),
+            ));
+        }
+
         if self.settings.max_file_size_kb == 0 {
             return Err(AiDocsError::InvalidConfig(
                 "settings.max_file_size_kb must be greater than 0".to_string(),

@@ -8,6 +8,7 @@ mod processor;
 mod resolver;
 mod status;
 mod storage;
+mod utils;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -175,12 +176,12 @@ async fn run(cli: Cli) -> Result<()> {
             config,
             mode,
             format,
-        } => run_status(&config, mode, format),
+        } => run_status(&config, mode, format).await,
         Commands::Check {
             config,
             mode,
             format,
-        } => run_check(&config, mode, format),
+        } => run_check(&config, mode, format).await,
         Commands::Init { config, force } => run_init_command(&config, force).await,
     }
 }
@@ -215,45 +216,32 @@ async fn run_sync(
     let mut saved_crates = Vec::new();
     let mut stats = SyncStats::default();
 
-    let mut jobs = Vec::new();
-    for (crate_name, crate_doc) in &config.crates {
-        jobs.push((crate_name.clone(), crate_doc.clone()));
-    }
-
-    let max_file_size_kb = config.settings.max_file_size_kb;
-    let concurrency = config.settings.sync_concurrency;
-    let semaphore = Arc::new(Semaphore::new(concurrency));
-    let mut join_set = tokio::task::JoinSet::new();
-
-    for (crate_name, crate_doc) in jobs {
-        let rust_output_dir = rust_output_dir.clone();
-        let rust_versions = rust_versions.clone();
-        let fetcher = Arc::clone(&fetcher);
-        let semaphore = Arc::clone(&semaphore);
-
-        join_set.spawn(async move {
-            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
-            sync_one_crate(
-                rust_output_dir,
-                rust_versions,
-                fetcher,
-                crate_name,
-                crate_doc,
-                force,
-                max_file_size_kb,
-            )
-            .await
-        });
-    }
-
-    while let Some(joined) = join_set.join_next().await {
-        let result = match joined {
-            Ok(result) => result,
-            Err(e) => {
-                warn!("sync worker failed: {e}");
-                SyncOutcome::Error(SyncErrorKind::Other)
+    let outcomes = run_orchestrated_sync(
+        &config,
+        config.crates.iter().map(|(n, c)| (n.clone(), c.clone())).collect(),
+        |crate_name, crate_doc| {
+            let rust_output_dir = rust_output_dir.clone();
+            let rust_versions = rust_versions.clone();
+            let fetcher = Arc::clone(&fetcher);
+            let force = force;
+            let max_file_size_kb = max_file_size_kb;
+            async move {
+                sync_one_crate(
+                    rust_output_dir,
+                    rust_versions,
+                    fetcher,
+                    crate_name,
+                    crate_doc,
+                    force,
+                    max_file_size_kb,
+                )
+                .await
             }
-        };
+        },
+    )
+    .await;
+
+    for result in outcomes {
         match result {
             SyncOutcome::Synced(saved) => {
                 saved_crates.push(saved);
@@ -301,43 +289,34 @@ async fn run_sync_latest_docs(config: Config, force: bool) -> Result<()> {
     let mut saved_crates = Vec::new();
     let mut stats = SyncStats::default();
 
-    let concurrency = config.settings.sync_concurrency;
-    let semaphore = Arc::new(Semaphore::new(concurrency));
-    let mut join_set = tokio::task::JoinSet::new();
-
-    for (crate_name, crate_doc) in config.crates.clone() {
-        let rust_output_dir = rust_output_dir.clone();
-        let github_fetcher = Arc::clone(&github_fetcher);
-        let latest_fetcher = Arc::clone(&latest_fetcher);
-        let semaphore = Arc::clone(&semaphore);
-        let max_file_size_kb = config.settings.max_file_size_kb;
-
-        join_set.spawn(async move {
-            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
-            sync_one_crate_latest(
-                rust_output_dir,
-                latest_fetcher,
-                github_fetcher,
-                crate_name,
-                crate_doc,
-                force,
-                max_file_size_kb,
-                config.settings.latest_ttl_hours,
-            )
-            .await
-        });
-    }
-
-    while let Some(joined) = join_set.join_next().await {
-        let result = match joined {
-            Ok(result) => result,
-            Err(e) => {
-                warn!("sync worker failed: {e}");
-                SyncOutcome::Error(SyncErrorKind::Other)
+    let outcomes = run_orchestrated_sync(
+        &config,
+        config.crates.clone().into_iter().collect(),
+        |crate_name, crate_doc| {
+            let rust_output_dir = rust_output_dir.clone();
+            let github_fetcher = Arc::clone(&github_fetcher);
+            let latest_fetcher = Arc::clone(&latest_fetcher);
+            let max_file_size_kb = config.settings.max_file_size_kb;
+            let ttl = config.settings.latest_ttl_hours;
+            async move {
+                sync_one_crate_latest(
+                    rust_output_dir,
+                    latest_fetcher,
+                    github_fetcher,
+                    crate_name,
+                    crate_doc,
+                    force,
+                    max_file_size_kb,
+                    ttl,
+                )
+                .await
             }
-        };
+        },
+    )
+    .await;
 
-        match result {
+    for outcome in outcomes {
+        match outcome {
             SyncOutcome::Synced(saved) => {
                 saved_crates.push(saved);
                 stats.synced += 1;
@@ -602,25 +581,48 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
+async fn run_orchestrated_sync<F, Fut>(
+    config: &Config,
+    jobs: Vec<(String, crate::config::CrateDoc)>,
+    worker: F,
+) -> Vec<SyncOutcome>
+where
+    F: Fn(String, crate::config::CrateDoc) -> Fut,
+    Fut: std::future::Future<Output = SyncOutcome> + Send + 'static,
+{
+    let concurrency = config.settings.sync_concurrency;
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut join_set = tokio::task::JoinSet::new();
+
+    for (name, doc) in jobs {
+        let semaphore = Arc::clone(&semaphore);
+        let fut = worker(name, doc);
+        join_set.spawn(async move {
+            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
+            fut.await
+        });
+    }
+
+    let mut outcomes = Vec::new();
+    while let Some(joined) = join_set.join_next().await {
+        match joined {
+            Ok(outcome) => outcomes.push(outcome),
+            Err(e) => {
+                warn!("sync worker panicked: {e}");
+                outcomes.push(SyncOutcome::Error(SyncErrorKind::Other));
+            }
+        }
+    }
+    outcomes
+}
+
 fn resolve_sync_mode(mode_override: Option<SyncModeArg>, configured_mode: SyncMode) -> SyncMode {
     mode_override
         .map(SyncModeArg::to_sync_mode)
         .unwrap_or(configured_mode)
 }
 
-fn is_latest_cache_fresh(fetched_at: &str, latest_ttl_hours: usize) -> bool {
-    let Ok(date) = NaiveDate::parse_from_str(fetched_at, "%Y-%m-%d") else {
-        return false;
-    };
 
-    let Some(fetched_dt) = date.and_hms_opt(0, 0, 0) else {
-        return false;
-    };
-
-    let now = Utc::now().naive_utc();
-    let age = now - fetched_dt;
-    age.num_hours() < latest_ttl_hours as i64
-}
 
 const fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
     !github_actions && matches!(format, OutputFormat::Table)
@@ -667,7 +669,7 @@ fn print_statuses(format: OutputFormat, statuses: &[crate::status::CrateStatus])
     Ok(())
 }
 
-fn run_status(
+async fn run_status(
     config_path: &Path,
     mode_override: Option<SyncModeArg>,
     format: OutputFormat,
@@ -682,15 +684,18 @@ fn run_status(
         SyncMode::Lockfile => {
             let rust_versions =
                 resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
-            collect_status(&config, &rust_versions, &rust_dir)
+            collect_status(&config, &rust_versions, &rust_dir).await
         }
-        SyncMode::LatestDocs => collect_status_latest(&config, &rust_dir),
+        SyncMode::LatestDocs => {
+            let fetcher = LatestDocsFetcher::new(reqwest::Client::new());
+            collect_status_latest(&config, &rust_dir, Some(&fetcher)).await
+        }
     };
 
     print_statuses(format, &statuses)
 }
 
-fn run_check(
+async fn run_check(
     config_path: &Path,
     mode_override: Option<SyncModeArg>,
     format: OutputFormat,
@@ -705,9 +710,12 @@ fn run_check(
         SyncMode::Lockfile => {
             let rust_versions =
                 resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
-            collect_status(&config, &rust_versions, &rust_dir)
+            collect_status(&config, &rust_versions, &rust_dir).await
         }
-        SyncMode::LatestDocs => collect_status_latest(&config, &rust_dir),
+        SyncMode::LatestDocs => {
+            let fetcher = LatestDocsFetcher::new(reqwest::Client::new());
+            collect_status_latest(&config, &rust_dir, Some(&fetcher)).await
+        }
     };
     let failing = statuses
         .iter()
@@ -743,10 +751,10 @@ mod tests {
     #[test]
     fn latest_cache_freshness_respects_ttl_hours() {
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        assert!(is_latest_cache_fresh(&today, 24));
+        assert!(crate::utils::is_latest_cache_fresh(&today, 24));
 
-        assert!(!is_latest_cache_fresh("1970-01-01", 24));
-        assert!(!is_latest_cache_fresh("invalid-date", 24));
+        assert!(!crate::utils::is_latest_cache_fresh("1970-01-01", 24));
+        assert!(!crate::utils::is_latest_cache_fresh("invalid-date", 24));
     }
 
     #[test]

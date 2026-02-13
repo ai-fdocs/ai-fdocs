@@ -4,7 +4,7 @@ use tracing::debug;
 /// Truncate changelog to entries around the current version:
 /// keep current section(s) + one previous minor series.
 pub fn truncate_changelog(content: &str, current_version: &str) -> String {
-    let heading_re = Regex::new(r"(?m)^#{1,3}\s+\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?)\]?")
+    let heading_re = Regex::new(r"(?m)^#{1,3}\s+.*?\b?\[?v?(\d+\.\d+\.\d+(?:-[\w.]+)?)\]?\b")
         .expect("valid changelog heading regex");
 
     let matches: Vec<(usize, String)> = heading_re
