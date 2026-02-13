@@ -26,6 +26,7 @@ export function truncateChangelog(content: string, currentVersion: string): stri
   let previousMinor: string | null = null;
   let cutPosition: number | null = null;
 
+  let seenDifferentMinors = 0;
   for (const item of matches) {
     const verMinor = parseMinor(item.version);
 
@@ -35,12 +36,22 @@ export function truncateChangelog(content: string, currentVersion: string): stri
 
     if (previousMinor === null) {
       previousMinor = verMinor;
+      seenDifferentMinors = 1;
       continue;
     }
 
     if (verMinor !== previousMinor) {
-      cutPosition = item.pos;
-      break;
+      if (seenDifferentMinors >= 1 && currentVersion !== "0.0.0" && matches.some(m => parseMinor(m.version) === currentMinor)) {
+        cutPosition = item.pos;
+        break;
+      }
+      // If current version not found, allow two minors before cutting
+      if (seenDifferentMinors >= 2) {
+        cutPosition = item.pos;
+        break;
+      }
+      previousMinor = verMinor;
+      seenDifferentMinors++;
     }
   }
 
