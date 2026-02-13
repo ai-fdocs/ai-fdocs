@@ -1,0 +1,7 @@
+target/
+rustup-init.exe
+npn/node_modules/
+.idea/
+.vscode/
+*.swp
+*.log

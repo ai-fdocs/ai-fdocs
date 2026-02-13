@@ -1,21 +1,38 @@
-# cargo-ai-fdocs
+# AI Fresh Docs
 
-**AI Fresh Docs (Rust CLI): version-locked documentation for AI coding assistants.**
+**AI Driven Documentation Management.**
 
-`cargo-ai-fdocs` helps close the knowledge gap between AI training data and the
-exact dependency versions used in your Rust project.
+`AI Fresh Docs` is a suite of tools that bridge the knowledge gap between AI training data and the exact dependency versions used in your project. It fetches, condenses, and indexes documentation for RAG.
+
+## The Suite (3 Editions)
+
+To avoid confusion, this repository hosts **three distinct versions** of the tool:
+
+1. **AI Fresh Docs Core (Rust)** 🦀
+    * **Location**: Root directory (`src/`)
+    * **Binary**: `cargo-ai-fdocs`
+    * **Purpose**: The high-performance engine. Handles heavy lifting, caching, and parsing.
+
+2. **AI Fresh Docs for NPM (Node.js)** 📦
+    * **Location**: [`npn/`](./npn)
+    * **Binary**: `ai-fdocs` (via npm)
+    * **Purpose**: A native wrapper for JavaScript/TypeScript developers using `package.json`.
+
+3. **AI Fresh Docs for VS Code** 🆚
+    * **Location**: [`vscode/`](./vscode)
+    * **Extension**: `ai-fdocs-vscode`
+    * **Purpose**: GUI extension to manage docs directly in the editor.
 
 It syncs README/CHANGELOG/guides from GitHub repositories for versions pinned in
 `Cargo.lock`, then stores them locally under `fdocs` so
 Cursor, Copilot, Windsurf, and other assistants can use up-to-date context.
 
-
 ## Repository layout (Rust + NPM versions)
 
 This repository currently contains **two aligned implementations** of AI Fresh Docs:
 
-- Rust CLI (`cargo-ai-fdocs`) in the repository root (`src/`, Cargo-based toolchain);
-- NPM/Node.js CLI (`npm-ai-fdocs`) in [`npn/`](./npn).
+* Rust CLI (`cargo-ai-fdocs`) in the repository root (`src/`, Cargo-based toolchain);
+* NPM/Node.js CLI (`npm-ai-fdocs`) in [`npn/`](./npn).
 
 The `npn/` folder is the NPM version of AI Fresh Docs and is expected to stay
 functionally aligned with the main implementation, with ecosystem-specific
@@ -23,17 +40,17 @@ adaptations for NPM (lockfile/dependency resolution, package metadata source,
 Node build/test toolchain).
 
 Alignment policy for `npn/`:
-- same core command surface: `init`, `sync`, `status`, `check`;
-- same output layout principles (`_INDEX.md`, per-package folders, metadata);
-- same cache/status semantics where possible, adapted for npm packages.
 
+* same core command surface: `init`, `sync`, `status`, `check`;
+* same output layout principles (`_INDEX.md`, per-package folders, metadata);
+* same cache/status semantics where possible, adapted for npm packages.
 
 ## Detailed technical documentation
 
 See [`docs/architecture`](./docs/architecture):
 
-- [Core Rust module](./docs/architecture/rust-module.md)
-- [NPM clone](./docs/architecture/npm-clone.md)
+* [Core Rust module](./docs/architecture/rust-module.md)
+* [NPM clone](./docs/architecture/npm-clone.md)
 
 ## Why this exists
 
@@ -43,9 +60,10 @@ compilation fails, developers stop relying on the assistant, and productivity
 falls back to manual lookup.
 
 We treat this as an engineering hygiene problem:
-- lockfile version is the source of truth;
-- docs are fetched for that exact version (or fallback branch with warning);
-- local docs are refreshed after dependency updates.
+
+* lockfile version is the source of truth;
+* docs are fetched for that exact version (or fallback branch with warning);
+* local docs are refreshed after dependency updates.
 
 ## Safety and degraded-mode behavior
 
@@ -53,26 +71,27 @@ AI Fresh Docs is designed to be **non-blocking** for your development platform.
 If external documentation sources (GitHub/registry) are unavailable, the tool must
 behave safely:
 
-- never mutate or delete project source code;
-- keep already downloaded docs cache intact unless explicit prune rules apply;
-- continue processing other dependencies (best-effort) instead of crashing whole run;
-- return clear diagnostics in `status/check` so CI and users can see what failed;
-- fail only the docs check contract (`check` exit code) rather than breaking runtime/application logic.
+* never mutate or delete project source code;
+* keep already downloaded docs cache intact unless explicit prune rules apply;
+* continue processing other dependencies (best-effort) instead of crashing whole run;
+* return clear diagnostics in `status/check` so CI and users can see what failed;
+* fail only the docs check contract (`check` exit code) rather than breaking runtime/application logic.
 
 In short: network outages degrade docs freshness, but must not break the host project.
 
 ## Current alpha scope (this repository)
 
 Implemented now:
-- parse project config (`ai-fdocs.toml`);
-- resolve crate versions from `Cargo.lock`;
-- fetch docs from GitHub (including custom file lists);
-- cache per crate/version with metadata and config fingerprint invalidation;
-- prune outdated crate folders;
-- generate global index (`_INDEX.md`);
-- show status of synced docs;
-- continue sync when one crate/file fails (best-effort), reporting errors in final summary statistics.
-- run crate sync in parallel for faster lockfile processing.
+
+* parse project config (`ai-fdocs.toml`);
+* resolve crate versions from `Cargo.lock`;
+* fetch docs from GitHub (including custom file lists);
+* cache per crate/version with metadata and config fingerprint invalidation;
+* prune outdated crate folders;
+* generate global index (`_INDEX.md`);
+* show status of synced docs;
+* continue sync when one crate/file fails (best-effort), reporting errors in final summary statistics.
+* run crate sync in parallel for faster lockfile processing.
 
 Current commands:
 
@@ -91,15 +110,14 @@ cargo ai-fdocs init
 > Note: the package name is `cargo-ai-fdocs`, while the current alpha command
 > flow in this branch uses `cargo ai-fdocs ...`.
 
-
 ## Sync mode safety switch
 
 `lockfile` remains the safe default mode in the first release stage.
 
-- Source of truth for mode resolution: CLI `--mode` has priority over `settings.sync_mode`.
-- Supported values: `lockfile` (stable default), `latest-docs` / `latest_docs` (beta only).
-- If no CLI flag is provided, behavior is unchanged: sync follows lockfile flow.
-- `latest-docs` is marked **beta** and is intentionally guarded behind explicit opt-in.
+* Source of truth for mode resolution: CLI `--mode` has priority over `settings.sync_mode`.
+* Supported values: `lockfile` (stable default), `latest-docs` / `latest_docs` (beta only).
+* If no CLI flag is provided, behavior is unchanged: sync follows lockfile flow.
+* `latest-docs` is marked **beta** and is intentionally guarded behind explicit opt-in.
 
 Examples:
 
@@ -119,7 +137,7 @@ cargo ai-fdocs sync --mode latest-docs
 cargo install cargo-ai-fdocs
 ```
 
-2. Create `ai-fdocs.toml`
+1. Create `ai-fdocs.toml`
 
 ```toml
 [settings]
@@ -142,7 +160,7 @@ files = ["README.md", "CHANGELOG.md", "docs/migration-guide.md"]
 ai_notes = "Prefer compile-time checked queries with sqlx::query!"
 ```
 
-3. Sync docs
+1. Sync docs
 
 ```bash
 # one command (auto-init if ai-fdocs.toml is missing)
@@ -189,21 +207,21 @@ fdocs/rust/
 
 `ai-fdocs.toml` supports:
 
-- `[settings]`
-  - `output_dir` (default: `fdocs`)
-  - `max_file_size_kb` (default: `200`)
-  - `prune` (default: `true`)
-  - `sync_concurrency` (default: `8`)
-  - `docs_source` (default: `"github"`)
-  - `sync_mode` (default: `"lockfile"`, also supports `"latest_docs"` / `"latest-docs"`)
-  - `latest_ttl_hours` (default: `24`, used in `latest_docs` mode)
-  - `docsrs_single_page` (default: `true`, latest-docs parser strategy flag; `false` is not supported yet in current stage)
+* `[settings]`
+  * `output_dir` (default: `fdocs`)
+  * `max_file_size_kb` (default: `200`)
+  * `prune` (default: `true`)
+  * `sync_concurrency` (default: `8`)
+  * `docs_source` (default: `"github"`)
+  * `sync_mode` (default: `"lockfile"`, also supports `"latest_docs"` / `"latest-docs"`)
+  * `latest_ttl_hours` (default: `24`, used in `latest_docs` mode)
+  * `docsrs_single_page` (default: `true`, latest-docs parser strategy flag; `false` is not supported yet in current stage)
 
-- `[crates.<name>]`
-  - `repo` (recommended, `owner/repo`)
-  - `subpath` (optional monorepo prefix for default files)
-  - `files` (optional explicit file list)
-  - `ai_notes` (optional hints included in index)
+* `[crates.<name>]`
+  * `repo` (recommended, `owner/repo`)
+  * `subpath` (optional monorepo prefix for default files)
+  * `files` (optional explicit file list)
+  * `ai_notes` (optional hints included in index)
 
 Legacy `sources = [{ type = "github", repo = "..." }]` is still accepted for
 backward compatibility, but new configs should use `repo`.
@@ -215,6 +233,16 @@ In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Ac
 `status/check --format json` now includes mode/source diagnostics per crate (`mode`, `source_kind`, `reason_code`) for machine-readable CI handling.
 
 `_SUMMARY.md` now includes explicit source provenance for latest-docs artifacts (docs.rs vs GitHub fallback) and truncation marker state.
+
+## Architecture & Components
+
+`ai-fdocs` is designed as a modular platform with a high-performance core and multiple interfaces:
+
+* **Core (`src/`)**: The Rust-based engine handling fetching, parsing, caching, and AI summarization.
+* **NPM CLI (`npn/`)**: A Node.js wrapper providing a native experience for JavaScript/TypeScript developers.
+* **VS Code Extension (`vscode/`)**: A planned graphical interface for managing documentation directly in the editor.
+
+Future plans include adapters for Python (PyPI), Go, and other ecosystems.
 
 ### CI recipes (GitHub Actions)
 
@@ -314,22 +342,24 @@ jobs:
 ### JSON output contract (`status/check --format json`)
 
 Top-level object:
-- `summary`: counters for current run
-  - `total`, `synced`, `missing`, `outdated`, `corrupted`
-- `statuses`: per-crate entries
-  - `crate_name`, `lock_version`, `docs_version`, `status`, `reason`
+
+* `summary`: counters for current run
+  * `total`, `synced`, `missing`, `outdated`, `corrupted`
+* `statuses`: per-crate entries
+  * `crate_name`, `lock_version`, `docs_version`, `status`, `reason`
 
 `status` enum values:
-- `Synced`
-- `SyncedFallback`
-- `Outdated`
-- `Missing`
-- `Corrupted`
 
+* `Synced`
+* `SyncedFallback`
+* `Outdated`
+* `Missing`
+* `Corrupted`
 
 For Cursor-like tools, point instructions to:
-- `fdocs/rust/_INDEX.md` first,
-- then the crate folder matching the current lockfile version.
+
+* `fdocs/rust/_INDEX.md` first,
+* then the crate folder matching the current lockfile version.
 
 This reduces stale API suggestions and makes generated code more consistent
 with your project’s real dependency graph.
@@ -337,27 +367,32 @@ with your project’s real dependency graph.
 ## Roadmap to stable release
 
 ### 1) Reliability hardening (near-term)
-- [x] Improve retry/backoff behavior for GitHub API and raw-content downloads.
-- [x] Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
-- [x] Expand integration tests for lockfile parsing, fallback-to-branch, and partial failure scenarios.
+
+* [x] Improve retry/backoff behavior for GitHub API and raw-content downloads.
+* [x] Add clearer error classification (auth/rate-limit/not-found/network) in `sync` summary.
+* [x] Expand integration tests for lockfile parsing, fallback-to-branch, and partial failure scenarios.
 
 ### 2) CI and team workflows
-- [x] Stabilize `cargo ai-fdocs check` exit codes for predictable CI gating.
-- [x] Add machine-readable check output mode (JSON) for CI/report tooling.
-- [x] Provide ready-to-copy GitHub Actions recipes in docs.
+
+* [x] Stabilize `cargo ai-fdocs check` exit codes for predictable CI gating.
+* [x] Add machine-readable check output mode (JSON) for CI/report tooling.
+* [x] Provide ready-to-copy GitHub Actions recipes in docs.
 
 ### 3) Output and cache stability
-- `.aifd-meta.toml` now carries an explicit schema version (`schema_version = 1`) as a stable baseline.
-- Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
-- [x] Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
+
+* `.aifd-meta.toml` now carries an explicit schema version (`schema_version = 1`) as a stable baseline.
+* Legacy cache metadata without schema version is auto-migrated on read; newer unknown schema versions are treated as incompatible.
+* [x] Improve index ergonomics (`_INDEX.md`) for large dependency graphs.
 
 ### 4) Release readiness (v1.0)
-- [x] Finalize CLI UX and help text consistency across all subcommands.
-- [x] Complete cross-platform smoke checks (Linux/macOS/Windows).
-- [x] Publish a compatibility/support policy and semantic-versioning guarantees.
+
+* [x] Finalize CLI UX and help text consistency across all subcommands.
+* [x] Complete cross-platform smoke checks (Linux/macOS/Windows).
+* [x] Publish a compatibility/support policy and semantic-versioning guarantees.
 
 ### 5) Tooling technical debt (next refactor candidate)
-- [x] Refactor `storage::save_crate_files` API to remove the `too_many_arguments` clippy warning.
+
+* [x] Refactor `storage::save_crate_files` API to remove the `too_many_arguments` clippy warning.
 
 ## License
 
