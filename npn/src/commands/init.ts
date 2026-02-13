@@ -22,12 +22,12 @@ function shouldSkip(name: string): boolean {
   return SKIP_PATTERNS.some((pattern) => (pattern.endsWith("/") ? name.startsWith(pattern) : name === pattern));
 }
 
-export async function cmdInit(projectRoot: string, overwrite: boolean): Promise<void> {
+export async function cmdInit(projectRoot: string, force: boolean): Promise<void> {
   const configPath = join(projectRoot, "ai-fdocs.toml");
   const packageJsonPath = join(projectRoot, "package.json");
 
-  if (existsSync(configPath) && !overwrite) {
-    throw new AiDocsError("ai-fdocs.toml already exists. Use --overwrite to replace.", "UNKNOWN");
+  if (existsSync(configPath) && !force) {
+    throw new AiDocsError("ai-fdocs.toml already exists. Use --force to replace.", "UNKNOWN");
   }
 
   if (!existsSync(packageJsonPath)) {

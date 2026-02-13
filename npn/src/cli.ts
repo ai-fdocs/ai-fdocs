@@ -11,11 +11,13 @@ program.name("ai-fdocs").description("Sync documentation from npm dependencies f
 program
   .command("init")
   .description("Generate ai-fdocs.toml from lockfile via npm registry")
-  .option("--overwrite", "Overwrite existing config", false)
+  .command("init")
+  .description("Generate ai-fdocs.toml from lockfile via npm registry")
+  .option("--force", "Overwrite existing config", false)
   .action(async (options) => {
     try {
       const { cmdInit } = await import("./commands/init.js");
-      await cmdInit(process.cwd(), options.overwrite);
+      await cmdInit(process.cwd(), options.force);
     } catch (e) {
       handleError(e);
     }

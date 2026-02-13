@@ -24,6 +24,7 @@ pub enum DocsSource {
 pub enum SyncMode {
     Lockfile,
     LatestDocs,
+    Hybrid,
 }
 
 impl SyncMode {
@@ -31,6 +32,7 @@ impl SyncMode {
         match self {
             Self::Lockfile => "lockfile",
             Self::LatestDocs => "latest_docs",
+            Self::Hybrid => "hybrid",
         }
     }
 }
@@ -44,8 +46,9 @@ impl<'de> Deserialize<'de> for SyncMode {
         match value.as_str() {
             "lockfile" => Ok(Self::Lockfile),
             "latest_docs" | "latest-docs" => Ok(Self::LatestDocs),
+            "hybrid" => Ok(Self::Hybrid),
             _ => Err(de::Error::custom(format!(
-                "settings.sync_mode must be \"lockfile\" or \"latest_docs\", got: {value}"
+                "settings.sync_mode must be \"lockfile\", \"latest_docs\", or \"hybrid\", got: {value}"
             ))),
         }
     }
@@ -154,6 +157,40 @@ impl CrateDoc {
             })
         })
     }
+
+    pub fn config_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+
+        // Hash stable fields
+        if let Some(repo) = &self.repo {
+            hasher.update(b"repo:");
+            hasher.update(repo.as_bytes());
+        }
+        if let Some(subpath) = &self.subpath {
+            hasher.update(b"subpath:");
+            hasher.update(subpath.as_bytes());
+        }
+        if let Some(files) = &self.files {
+            hasher.update(b"files:");
+            for f in files {
+                hasher.update(f.as_bytes());
+                hasher.update(b",");
+            }
+        }
+        hasher.update(b"notes:");
+        hasher.update(self.ai_notes.as_bytes());
+
+        // Legacy sources fallback
+        if let Some(sources) = &self.sources {
+            hasher.update(b"sources:");
+            // Simplified hash for legacy
+            let debug_repr = format!("{:?}", sources);
+            hasher.update(debug_repr.as_bytes());
+        }
+
+        format!("{:x}", hasher.finalize())
+    }
 }
 
 fn default_output_dir() -> PathBuf {
@@ -234,7 +271,6 @@ impl Config {
             ));
         }
 
-        let require_github_repo = matches!(self.settings.sync_mode, SyncMode::Lockfile);
         if require_github_repo {
             for (crate_name, crate_cfg) in &self.crates {
                 if crate_cfg.github_repo().is_none() {
@@ -316,6 +352,31 @@ repo = "serde-rs/serde"
         fs::remove_file(&path).expect("must cleanup temporary config");
 
         assert_eq!(config.settings.sync_mode, SyncMode::LatestDocs);
+    }
+
+    #[test]
+    fn settings_sync_mode_accepts_hybrid() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-fdocs-hybrid-sync-mode-{suffix}.toml"));
+
+        fs::write(
+            &path,
+            r#"[settings]
+sync_mode = "hybrid"
+
+[crates.serde]
+repo = "serde-rs/serde"
+"#,
+        )
+        .expect("must write temporary config");
+
+        let config = Config::load(&path).expect("config should parse");
+        fs::remove_file(&path).expect("must cleanup temporary config");
+
+        assert_eq!(config.settings.sync_mode, SyncMode::Hybrid);
     }
 
     #[test]

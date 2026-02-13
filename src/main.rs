@@ -86,6 +86,7 @@ enum Commands {
 enum SyncModeArg {
     Lockfile,
     LatestDocs,
+    Hybrid,
 }
 
 impl SyncModeArg {
@@ -93,6 +94,7 @@ impl SyncModeArg {
         match self {
             Self::Lockfile => SyncMode::Lockfile,
             Self::LatestDocs => SyncMode::LatestDocs,
+            Self::Hybrid => SyncMode::Hybrid,
         }
     }
 }
@@ -497,21 +499,203 @@ async fn sync_one_crate(
     }
 
     info!("Syncing {crate_name}@{version}...");
-    sync_one_crate_from_github(
+
+    sync_one_crate_hybrid(
         rust_output_dir,
         fetcher,
         crate_name,
         crate_doc,
         version,
         max_file_size_kb,
-        None,
     )
     .await
 }
 
+async fn sync_one_crate_hybrid(
+    rust_output_dir: PathBuf,
+    github_fetcher: Arc<GitHubFetcher>,
+    crate_name: String,
+    crate_doc: crate::config::CrateDoc,
+    version: String,
+    max_file_size_kb: usize,
+) -> SyncOutcome {
+    // 1. Try fetching from docs.rs first
+    let latest_fetcher = LatestDocsFetcher::new();
+    let docsrs_readme = match latest_fetcher
+        .fetch_api_markdown(&crate_name, &version, max_file_size_kb)
+        .await 
+    {
+        Ok(artifact) => {
+            info!("  ✓ {crate_name}@{version}: description fetched from docs.rs");
+            Some(artifact)
+        }
+        Err(e) => {
+            warn!("  ⚠️ docs.rs fetch failed for {crate_name}@{version}: {e}; will use GitHub README");
+            None
+        }
+    };
+
+    // 2. Resolve GitHub Ref
+    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
+        warn!("Crate '{crate_name}' has no GitHub repo in config");
+        // Fallback: if we have docs.rs content, save it and consider it synced.
+        if let Some(art) = docsrs_readme {
+             match storage::save_latest_api_markdown(
+                &rust_output_dir,
+                &crate_name,
+                &version,
+                &art.markdown,
+                &art.docsrs_input_url,
+                art.truncated,
+                &crate_doc,
+            ) {
+                Ok(saved) => return SyncOutcome::Synced(saved),
+                Err(e) => return SyncOutcome::Error(e.sync_kind()),
+            }
+        }
+        return SyncOutcome::Skipped;
+    };
+
+    let resolved = match github_fetcher
+        .resolve_ref(&repo, &crate_name, version.as_str())
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
+            return SyncOutcome::Error(e.sync_kind());
+        }
+    };
+
+    // 3. Build Requests
+    let mut requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
+    
+    // If we have docs.rs README, remove README from GitHub requests
+    if docsrs_readme.is_some() {
+        requests.retain(|r| !is_readme_request(&r.original_path));
+    }
+
+    // 4. Fetch from GitHub
+    let results = github_fetcher
+        .fetch_files(&repo, &resolved.git_ref, &requests)
+        .await;
+
+    let mut fetch_collection = collect_fetched_files(results, &crate_name, &version);
+
+    // 5. Inject docs.rs README if available
+    if let Some(art) = docsrs_readme {
+        fetch_collection.files.push(FetchedFile {
+            path: "README.md".to_string(),
+            source_url: art.docsrs_input_url.clone(), // Point to docs.rs as source
+            content: art.markdown,
+        });
+    }
+
+    if fetch_collection.files.is_empty() {
+        warn!("  ✗ no files fetched for {crate_name}@{version}");
+        return SyncOutcome::Error(SyncErrorKind::NotFound);
+    }
+
+    let save_ctx = storage::SaveContext {
+        repo: &repo,
+        resolved: &resolved,
+        max_file_size_kb,
+        source_kind: "hybrid_docsrs_github",
+        artifact_path: None,
+        docsrs_input_url: None, // We embedded it in the file source_url
+        upstream_latest_version: Some(&version),
+        truncated: None,
+    };
+
+    let save_req = storage::SaveRequest {
+        crate_name: &crate_name,
+        version: &version,
+        fetched_files: &fetch_collection.files,
+        crate_config: &crate_doc,
+    };
+
+    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
+        Ok(saved) => SyncOutcome::Synced(saved),
+        Err(e) => SyncOutcome::Error(e.sync_kind()),
+    }
+}
+
+fn is_readme_request(path: &str) -> bool {
+    path.eq_ignore_ascii_case("README.md")
+}
+
+// Helper to identify likely README requests
+fn is_readme_request(path: &str) -> bool {
+    path.eq_ignore_ascii_case("README.md")
+}
+
+async fn sync_one_crate_from_github(
+    rust_output_dir: PathBuf,
+    fetcher: Arc<GitHubFetcher>,
+    crate_name: String,
+    crate_doc: crate::config::CrateDoc,
+    version: String,
+    max_file_size_kb: usize,
+    source_kind_override: Option<&'static str>,
+) -> SyncOutcome {
+    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
+        warn!("Crate '{crate_name}' has no GitHub repo in config");
+        if source_kind_override.is_some() {
+            return SyncOutcome::Error(SyncErrorKind::Other);
+        }
+        return SyncOutcome::Skipped;
+    };
+
+    let resolved = match fetcher
+        .resolve_ref(&repo, &crate_name, version.as_str())
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
+            return SyncOutcome::Error(e.sync_kind());
+        }
+    };
+
+    let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
+    let results = fetcher
+        .fetch_files(&repo, &resolved.git_ref, &requests)
+        .await;
+
+    let fetched_files = collect_fetched_files(results, &crate_name, &version);
+    if fetched_files.files.is_empty() {
+        warn!("  ✗ no files fetched for {crate_name}@{version}");
+        return SyncOutcome::Error(SyncErrorKind::NotFound);
+    }
+
+    let source_kind = source_kind_override.unwrap_or("github");
+    let save_ctx = storage::SaveContext {
+        repo: &repo,
+        resolved: &resolved,
+        max_file_size_kb,
+        source_kind,
+        artifact_path: None,
+        docsrs_input_url: None,
+        upstream_latest_version: Some(&version),
+        truncated: None,
+    };
+
+    let save_req = storage::SaveRequest {
+        crate_name: &crate_name,
+        version: &version,
+        fetched_files: &fetched_files.files,
+        crate_config: &crate_doc,
+    };
+
+    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
+        Ok(saved) => SyncOutcome::Synced(saved),
+        Err(e) => SyncOutcome::Error(e.sync_kind()),
+    }
+}
+
 struct FetchCollection {
     files: Vec<FetchedFile>,
-    non_optional_errors: usize,
+    _non_optional_errors: usize,
 }
 
 fn collect_fetched_files(
@@ -537,7 +721,7 @@ fn collect_fetched_files(
 
     FetchCollection {
         files,
-        non_optional_errors,
+        _non_optional_errors: non_optional_errors,
     }
 }
 
@@ -681,7 +865,7 @@ async fn run_status(
     let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
 
     let statuses = match sync_mode {
-        SyncMode::Lockfile => {
+        SyncMode::Lockfile | SyncMode::Hybrid => {
             let rust_versions =
                 resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
             collect_status(&config, &rust_versions, &rust_dir).await
@@ -707,7 +891,7 @@ async fn run_check(
     let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
 
     let statuses = match sync_mode {
-        SyncMode::Lockfile => {
+        SyncMode::Lockfile | SyncMode::Hybrid => {
             let rust_versions =
                 resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
             collect_status(&config, &rust_versions, &rust_dir).await
