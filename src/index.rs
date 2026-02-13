@@ -9,7 +9,17 @@ use crate::storage::SavedCrate;
 pub fn generate_index(output_dir: &Path, crates: &[SavedCrate]) -> Result<()> {
     let date = Utc::now().format("%Y-%m-%d").to_string();
     let mut sorted = crates.to_vec();
-    sorted.sort_by(|a, b| a.name.cmp(&b.name).then(a.version.cmp(&b.version)));
+    sorted.sort_by(|a, b| {
+        a.name.cmp(&b.name).then_with(|| {
+            if a.version == b.version {
+                std::cmp::Ordering::Equal
+            } else if crate::utils::is_version_better(&a.version, Some(&b.version)) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            }
+        })
+    });
 
     let fallback_count = sorted.iter().filter(|c| c.is_fallback).count();
     let total_files: usize = sorted.iter().map(|c| c.files.len()).sum();

@@ -82,7 +82,9 @@ cargo ai-fdocs sync --force
 cargo ai-fdocs status
 cargo ai-fdocs status --format json
 cargo ai-fdocs check
+cargo ai-fdocs check --mode latest-docs
 cargo ai-fdocs check --format json
+cargo ai-fdocs status --mode latest-docs
 cargo ai-fdocs init
 ```
 
@@ -121,12 +123,14 @@ cargo install cargo-ai-fdocs
 
 ```toml
 [settings]
-output_dir = "fdocs/rust"
+output_dir = "fdocs"
 max_file_size_kb = 200
 prune = true
 sync_concurrency = 8
 docs_source = "github"
 sync_mode = "lockfile"
+latest_ttl_hours = 24
+docsrs_single_page = true
 
 [crates.axum]
 repo = "tokio-rs/axum"
@@ -186,11 +190,14 @@ fdocs/rust/
 `ai-fdocs.toml` supports:
 
 - `[settings]`
-  - `output_dir` (default: `fdocs/rust`)
+  - `output_dir` (default: `fdocs`)
   - `max_file_size_kb` (default: `200`)
   - `prune` (default: `true`)
   - `sync_concurrency` (default: `8`)
   - `docs_source` (default: `"github"`)
+  - `sync_mode` (default: `"lockfile"`, also supports `"latest_docs"` / `"latest-docs"`)
+  - `latest_ttl_hours` (default: `24`, used in `latest_docs` mode)
+  - `docsrs_single_page` (default: `true`, latest-docs parser strategy flag; `false` is not supported yet in current stage)
 
 - `[crates.<name>]`
   - `repo` (recommended, `owner/repo`)
@@ -204,6 +211,10 @@ backward compatibility, but new configs should use `repo`.
 ## Practical AI integration
 
 In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Actions they are additionally emitted as `::error` annotations.
+
+`status/check --format json` now includes mode/source diagnostics per crate (`mode`, `source_kind`, `reason_code`) for machine-readable CI handling.
+
+`_SUMMARY.md` now includes explicit source provenance for latest-docs artifacts (docs.rs vs GitHub fallback) and truncation marker state.
 
 ### CI recipes (GitHub Actions)
 
@@ -264,7 +275,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add fdocs/rust ai-fdocs.toml
+          git add fdocs ai-fdocs.toml
           git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
 
       - name: Push changes

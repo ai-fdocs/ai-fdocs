@@ -8,12 +8,14 @@ mod processor;
 mod resolver;
 mod status;
 mod storage;
+mod utils;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 
+use chrono::{NaiveDate, Utc};
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
@@ -21,8 +23,9 @@ use crate::config::{Config, DocsSource, SyncMode};
 use crate::error::AiDocsError;
 use crate::error::{Result, SyncErrorKind};
 use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
+use crate::fetcher::latest::{is_docsrs_fallback_eligible, LatestDocsFetcher};
 use crate::init::run_init as run_init_command;
-use crate::status::{collect_status, print_status_table, DocsStatus};
+use crate::status::{collect_status, collect_status_latest, print_status_table, DocsStatus};
 
 const DEFAULT_CONFIG_PATH: &str = "ai-fdocs.toml";
 
@@ -51,6 +54,9 @@ enum Commands {
     Status {
         #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Sync mode override for status evaluation.
+        #[arg(long, value_enum)]
+        mode: Option<SyncModeArg>,
         /// Output format for status report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
@@ -59,6 +65,9 @@ enum Commands {
     Check {
         #[arg(short, long, default_value = DEFAULT_CONFIG_PATH)]
         config: PathBuf,
+        /// Sync mode override for check evaluation.
+        #[arg(long, value_enum)]
+        mode: Option<SyncModeArg>,
         /// Output format for check report.
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         format: OutputFormat,
@@ -163,8 +172,16 @@ async fn run(cli: Cli) -> Result<()> {
             mode,
             force,
         } => run_sync(&config, mode, force).await,
-        Commands::Status { config, format } => run_status(&config, format),
-        Commands::Check { config, format } => run_check(&config, format),
+        Commands::Status {
+            config,
+            mode,
+            format,
+        } => run_status(&config, mode, format).await,
+        Commands::Check {
+            config,
+            mode,
+            format,
+        } => run_check(&config, mode, format).await,
         Commands::Init { config, force } => run_init_command(&config, force).await,
     }
 }
@@ -180,10 +197,7 @@ async fn run_sync(
     let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
     info!("Resolved sync mode: {}", sync_mode.as_str());
     if matches!(sync_mode, SyncMode::LatestDocs) {
-        return Err(error::AiDocsError::Other(
-            "sync mode 'latest_docs' is beta and not implemented yet; keep default lockfile mode"
-                .to_string(),
-        ));
+        return run_sync_latest_docs(config, force).await;
     }
 
     match config.settings.docs_source {
@@ -202,45 +216,32 @@ async fn run_sync(
     let mut saved_crates = Vec::new();
     let mut stats = SyncStats::default();
 
-    let mut jobs = Vec::new();
-    for (crate_name, crate_doc) in &config.crates {
-        jobs.push((crate_name.clone(), crate_doc.clone()));
-    }
-
-    let max_file_size_kb = config.settings.max_file_size_kb;
-    let concurrency = config.settings.sync_concurrency;
-    let semaphore = Arc::new(Semaphore::new(concurrency));
-    let mut join_set = tokio::task::JoinSet::new();
-
-    for (crate_name, crate_doc) in jobs {
-        let rust_output_dir = rust_output_dir.clone();
-        let rust_versions = rust_versions.clone();
-        let fetcher = Arc::clone(&fetcher);
-        let semaphore = Arc::clone(&semaphore);
-
-        join_set.spawn(async move {
-            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
-            sync_one_crate(
-                rust_output_dir,
-                rust_versions,
-                fetcher,
-                crate_name,
-                crate_doc,
-                force,
-                max_file_size_kb,
-            )
-            .await
-        });
-    }
-
-    while let Some(joined) = join_set.join_next().await {
-        let result = match joined {
-            Ok(result) => result,
-            Err(e) => {
-                warn!("sync worker failed: {e}");
-                SyncOutcome::Error(SyncErrorKind::Other)
+    let outcomes = run_orchestrated_sync(
+        &config,
+        config.crates.iter().map(|(n, c)| (n.clone(), c.clone())).collect(),
+        |crate_name, crate_doc| {
+            let rust_output_dir = rust_output_dir.clone();
+            let rust_versions = rust_versions.clone();
+            let fetcher = Arc::clone(&fetcher);
+            let force = force;
+            let max_file_size_kb = max_file_size_kb;
+            async move {
+                sync_one_crate(
+                    rust_output_dir,
+                    rust_versions,
+                    fetcher,
+                    crate_name,
+                    crate_doc,
+                    force,
+                    max_file_size_kb,
+                )
+                .await
             }
-        };
+        },
+    )
+    .await;
+
+    for result in outcomes {
         match result {
             SyncOutcome::Synced(saved) => {
                 saved_crates.push(saved);
@@ -278,6 +279,203 @@ async fn run_sync(
     Ok(())
 }
 
+async fn run_sync_latest_docs(config: Config, force: bool) -> Result<()> {
+    info!("Using docs source: crates.io + docs.rs (with GitHub fallback)");
+
+    let rust_output_dir = storage::rust_output_dir(&config.settings.output_dir);
+    let github_fetcher = Arc::new(GitHubFetcher::new());
+    let latest_fetcher = Arc::new(LatestDocsFetcher::new());
+
+    let mut saved_crates = Vec::new();
+    let mut stats = SyncStats::default();
+
+    let outcomes = run_orchestrated_sync(
+        &config,
+        config.crates.clone().into_iter().collect(),
+        |crate_name, crate_doc| {
+            let rust_output_dir = rust_output_dir.clone();
+            let github_fetcher = Arc::clone(&github_fetcher);
+            let latest_fetcher = Arc::clone(&latest_fetcher);
+            let max_file_size_kb = config.settings.max_file_size_kb;
+            let ttl = config.settings.latest_ttl_hours;
+            async move {
+                sync_one_crate_latest(
+                    rust_output_dir,
+                    latest_fetcher,
+                    github_fetcher,
+                    crate_name,
+                    crate_doc,
+                    force,
+                    max_file_size_kb,
+                    ttl,
+                )
+                .await
+            }
+        },
+    )
+    .await;
+
+    for outcome in outcomes {
+        match outcome {
+            SyncOutcome::Synced(saved) => {
+                saved_crates.push(saved);
+                stats.synced += 1;
+            }
+            SyncOutcome::Cached(saved) => {
+                if let Some(saved) = saved {
+                    saved_crates.push(saved);
+                }
+                stats.cached += 1;
+            }
+            SyncOutcome::Skipped => stats.skipped += 1,
+            SyncOutcome::Error(kind) => stats.record_error(kind),
+        }
+    }
+
+    index::generate_index(&rust_output_dir, &saved_crates)?;
+    info!(
+        "✅ Latest-docs sync complete: {} synced, {} cached, {} skipped, {} errors",
+        stats.synced, stats.cached, stats.skipped, stats.errors
+    );
+
+    Ok(())
+}
+
+async fn sync_one_crate_latest(
+    rust_output_dir: PathBuf,
+    latest_fetcher: Arc<LatestDocsFetcher>,
+    github_fetcher: Arc<GitHubFetcher>,
+    crate_name: String,
+    crate_doc: crate::config::CrateDoc,
+    force: bool,
+    max_file_size_kb: usize,
+    latest_ttl_hours: usize,
+) -> SyncOutcome {
+    let version = match latest_fetcher.resolve_latest_version(&crate_name).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("  ✗ failed to resolve latest version for {crate_name}: {e}");
+            return SyncOutcome::Error(e.sync_kind());
+        }
+    };
+
+    if !force && storage::is_cached(&rust_output_dir, &crate_name, &version, &crate_doc) {
+        if let Some(meta) = storage::read_meta(&rust_output_dir, &crate_name, &version) {
+            if is_latest_cache_fresh(&meta.fetched_at, latest_ttl_hours) {
+                info!("  ⏭ {crate_name}@{version}: cached (TTL valid), skipping");
+                let cached =
+                    storage::read_cached_info(&rust_output_dir, &crate_name, &version, &crate_doc);
+                return SyncOutcome::Cached(cached);
+            }
+            info!("  🔄 {crate_name}@{version}: cache TTL expired, refreshing");
+        }
+    }
+
+    match latest_fetcher
+        .fetch_api_markdown(&crate_name, &version, max_file_size_kb)
+        .await
+    {
+        Ok(artifact) => match storage::save_latest_api_markdown(
+            &rust_output_dir,
+            &crate_name,
+            &version,
+            &artifact.markdown,
+            &artifact.docsrs_input_url,
+            artifact.truncated,
+            &crate_doc,
+        ) {
+            Ok(saved) => SyncOutcome::Synced(saved),
+            Err(e) => {
+                warn!("  ✗ failed to save docs.rs artifact for {crate_name}@{version}: {e}");
+                SyncOutcome::Error(e.sync_kind())
+            }
+        },
+        Err(e) if is_docsrs_fallback_eligible(&e) => {
+            warn!(
+                "  ⚠ docs.rs unavailable for {crate_name}@{version}: {e}; trying GitHub fallback"
+            );
+            sync_one_crate_from_github(
+                rust_output_dir,
+                github_fetcher,
+                crate_name,
+                crate_doc,
+                version,
+                max_file_size_kb,
+                Some("github_fallback"),
+            )
+            .await
+        }
+        Err(e) => {
+            warn!("  ✗ docs.rs fetch failed for {crate_name}@{version}: {e}");
+            SyncOutcome::Error(e.sync_kind())
+        }
+    }
+}
+
+async fn sync_one_crate_from_github(
+    rust_output_dir: PathBuf,
+    fetcher: Arc<GitHubFetcher>,
+    crate_name: String,
+    crate_doc: crate::config::CrateDoc,
+    version: String,
+    max_file_size_kb: usize,
+    source_kind_override: Option<&'static str>,
+) -> SyncOutcome {
+    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
+        warn!("Crate '{crate_name}' has no GitHub repo in config");
+        if source_kind_override.is_some() {
+            return SyncOutcome::Error(SyncErrorKind::Other);
+        }
+        return SyncOutcome::Skipped;
+    };
+
+    let resolved = match fetcher
+        .resolve_ref(&repo, &crate_name, version.as_str())
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
+            return SyncOutcome::Error(e.sync_kind());
+        }
+    };
+
+    let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
+    let results = fetcher
+        .fetch_files(&repo, &resolved.git_ref, &requests)
+        .await;
+
+    let fetched_files = collect_fetched_files(results, &crate_name, &version);
+    if fetched_files.files.is_empty() {
+        warn!("  ✗ no files fetched for {crate_name}@{version}");
+        return SyncOutcome::Error(SyncErrorKind::NotFound);
+    }
+
+    let source_kind = source_kind_override.unwrap_or("github");
+    let save_ctx = storage::SaveContext {
+        repo: &repo,
+        resolved: &resolved,
+        max_file_size_kb,
+        source_kind,
+        artifact_path: None,
+        docsrs_input_url: None,
+        upstream_latest_version: Some(&version),
+        truncated: None,
+    };
+
+    let save_req = storage::SaveRequest {
+        crate_name: &crate_name,
+        version: &version,
+        fetched_files: &fetched_files.files,
+        crate_config: &crate_doc,
+    };
+
+    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
+        Ok(saved) => SyncOutcome::Synced(saved),
+        Err(e) => SyncOutcome::Error(e.sync_kind()),
+    }
+}
+
 async fn sync_one_crate(
     rust_output_dir: PathBuf,
     rust_versions: std::collections::HashMap<String, String>,
@@ -292,11 +490,6 @@ async fn sync_one_crate(
         return SyncOutcome::Skipped;
     };
 
-    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
-        warn!("Crate '{crate_name}' has no GitHub repo in config, skipping");
-        return SyncOutcome::Skipped;
-    };
-
     if !force && storage::is_cached(&rust_output_dir, &crate_name, &version, &crate_doc) {
         info!("  ⏭ {crate_name}@{version}: cached, skipping");
         let cached = storage::read_cached_info(&rust_output_dir, &crate_name, &version, &crate_doc);
@@ -304,64 +497,16 @@ async fn sync_one_crate(
     }
 
     info!("Syncing {crate_name}@{version}...");
-
-    let resolved = match fetcher
-        .resolve_ref(&repo, &crate_name, version.as_str())
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
-            return SyncOutcome::Error(e.sync_kind());
-        }
-    };
-
-    if resolved.is_fallback {
-        warn!(
-            "  ⚠ no exact tag for {crate_name}@{version}, using {}",
-            resolved.git_ref
-        );
-    }
-
-    let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
-    let results = fetcher
-        .fetch_files(&repo, &resolved.git_ref, &requests)
-        .await;
-
-    let fetched_files = collect_fetched_files(results, &crate_name, &version);
-    if fetched_files.non_optional_errors > 0 && !fetched_files.files.is_empty() {
-        warn!(
-            "  ⚠ partial fetch for {crate_name}@{version}: {} file error(s), continuing with {} fetched file(s)",
-            fetched_files.non_optional_errors,
-            fetched_files.files.len()
-        );
-    }
-
-    if fetched_files.files.is_empty() {
-        warn!("  ✗ no files fetched for {crate_name}@{version}");
-        return SyncOutcome::Error(SyncErrorKind::NotFound);
-    }
-
-    let save_ctx = storage::SaveContext {
-        repo: &repo,
-        resolved: &resolved,
+    sync_one_crate_from_github(
+        rust_output_dir,
+        fetcher,
+        crate_name,
+        crate_doc,
+        version,
         max_file_size_kb,
-    };
-
-    let save_req = storage::SaveRequest {
-        crate_name: &crate_name,
-        version: &version,
-        fetched_files: &fetched_files.files,
-        crate_config: &crate_doc,
-    };
-
-    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
-        Ok(saved) => SyncOutcome::Synced(saved),
-        Err(e) => {
-            warn!("  ✗ failed to save {crate_name}@{version}: {e}");
-            SyncOutcome::Error(e.sync_kind())
-        }
-    }
+        None,
+    )
+    .await
 }
 
 struct FetchCollection {
@@ -436,11 +581,48 @@ fn build_requests(subpath: Option<&str>, explicit_files: Option<Vec<String>>) ->
     ]
 }
 
+async fn run_orchestrated_sync<F, Fut>(
+    config: &Config,
+    jobs: Vec<(String, crate::config::CrateDoc)>,
+    worker: F,
+) -> Vec<SyncOutcome>
+where
+    F: Fn(String, crate::config::CrateDoc) -> Fut,
+    Fut: std::future::Future<Output = SyncOutcome> + Send + 'static,
+{
+    let concurrency = config.settings.sync_concurrency;
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut join_set = tokio::task::JoinSet::new();
+
+    for (name, doc) in jobs {
+        let semaphore = Arc::clone(&semaphore);
+        let fut = worker(name, doc);
+        join_set.spawn(async move {
+            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
+            fut.await
+        });
+    }
+
+    let mut outcomes = Vec::new();
+    while let Some(joined) = join_set.join_next().await {
+        match joined {
+            Ok(outcome) => outcomes.push(outcome),
+            Err(e) => {
+                warn!("sync worker panicked: {e}");
+                outcomes.push(SyncOutcome::Error(SyncErrorKind::Other));
+            }
+        }
+    }
+    outcomes
+}
+
 fn resolve_sync_mode(mode_override: Option<SyncModeArg>, configured_mode: SyncMode) -> SyncMode {
     mode_override
         .map(SyncModeArg::to_sync_mode)
         .unwrap_or(configured_mode)
 }
+
+
 
 const fn should_emit_plain_check_errors(format: OutputFormat, github_actions: bool) -> bool {
     !github_actions && matches!(format, OutputFormat::Table)
@@ -487,23 +669,54 @@ fn print_statuses(format: OutputFormat, statuses: &[crate::status::CrateStatus])
     Ok(())
 }
 
-fn run_status(config_path: &Path, format: OutputFormat) -> Result<()> {
+async fn run_status(
+    config_path: &Path,
+    mode_override: Option<SyncModeArg>,
+    format: OutputFormat,
+) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
-    let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
-
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
-    let statuses = collect_status(&config, &rust_versions, &rust_dir);
+
+    let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
+
+    let statuses = match sync_mode {
+        SyncMode::Lockfile => {
+            let rust_versions =
+                resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
+            collect_status(&config, &rust_versions, &rust_dir).await
+        }
+        SyncMode::LatestDocs => {
+            let fetcher = LatestDocsFetcher::new(reqwest::Client::new());
+            collect_status_latest(&config, &rust_dir, Some(&fetcher)).await
+        }
+    };
+
     print_statuses(format, &statuses)
 }
 
-fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
+async fn run_check(
+    config_path: &Path,
+    mode_override: Option<SyncModeArg>,
+    format: OutputFormat,
+) -> Result<()> {
     let config = Config::load(config_path)?;
     info!("Loaded config from {}", config_path.display());
-    let rust_versions = resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
     let rust_dir = storage::rust_output_dir(&config.settings.output_dir);
 
-    let statuses = collect_status(&config, &rust_versions, &rust_dir);
+    let sync_mode = resolve_sync_mode(mode_override, config.settings.sync_mode);
+
+    let statuses = match sync_mode {
+        SyncMode::Lockfile => {
+            let rust_versions =
+                resolver::resolve_cargo_versions(PathBuf::from("Cargo.lock").as_path())?;
+            collect_status(&config, &rust_versions, &rust_dir).await
+        }
+        SyncMode::LatestDocs => {
+            let fetcher = LatestDocsFetcher::new(reqwest::Client::new());
+            collect_status_latest(&config, &rust_dir, Some(&fetcher)).await
+        }
+    };
     let failing = statuses
         .iter()
         .any(|s| !matches!(s.status, DocsStatus::Synced | DocsStatus::SyncedFallback));
@@ -528,12 +741,21 @@ fn run_check(config_path: &Path, format: OutputFormat) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_requests, collect_fetched_files, resolve_sync_mode, should_emit_plain_check_errors,
-        OutputFormat, SyncMode, SyncModeArg,
+        build_requests, collect_fetched_files, is_latest_cache_fresh, resolve_sync_mode,
+        should_emit_plain_check_errors, OutputFormat, SyncMode, SyncModeArg,
     };
     use crate::error::AiDocsError;
     use crate::fetcher::github::FetchedFile;
     use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn latest_cache_freshness_respects_ttl_hours() {
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        assert!(crate::utils::is_latest_cache_fresh(&today, 24));
+
+        assert!(!crate::utils::is_latest_cache_fresh("1970-01-01", 24));
+        assert!(!crate::utils::is_latest_cache_fresh("invalid-date", 24));
+    }
 
     #[test]
     fn emits_plain_errors_only_for_table_outside_gha() {
@@ -620,6 +842,26 @@ mod tests {
         assert!(mode.is_none(), "sync --mode should be optional");
         let resolved = resolve_sync_mode(mode, SyncMode::Lockfile);
         assert_eq!(resolved, SyncMode::Lockfile);
+    }
+
+    #[test]
+    fn status_mode_defaults_to_none_when_flag_not_provided() {
+        let cli = super::Cli::parse_from(["ai-fdocs", "status"]);
+        let super::Commands::Status { mode, .. } = cli.command else {
+            panic!("expected status command");
+        };
+
+        assert!(mode.is_none(), "status --mode should be optional");
+    }
+
+    #[test]
+    fn check_mode_parses_latest_docs_override() {
+        let cli = super::Cli::parse_from(["ai-fdocs", "check", "--mode", "latest-docs"]);
+        let super::Commands::Check { mode, .. } = cli.command else {
+            panic!("expected check command");
+        };
+
+        assert_eq!(mode, Some(SyncModeArg::LatestDocs));
     }
 
     #[test]
