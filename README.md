@@ -214,6 +214,17 @@ fdocs/rust/
     └── docs__migration-guide.md
 ```
 
+## Проверка ссылок
+
+Для проверки локальных ссылок в Markdown-файлах (relative links) запустите:
+
+```bash
+python scripts/check_md_links.py
+```
+
+Скрипт проверяет все `*.md`, игнорирует `http(s)`, `mailto` и anchor-ссылки,
+а при ошибках печатает список в формате `file -> broken link` и завершается с non-zero кодом.
+
 ## How it works
 
 1. Read exact crate versions from `Cargo.lock`.

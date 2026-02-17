@@ -1,0 +1,20 @@
+name: Docs Links
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  check-markdown-links:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Check markdown relative links
+        run: python scripts/check_md_links.py
