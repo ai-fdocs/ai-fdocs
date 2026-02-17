@@ -1,8 +1,10 @@
-# AI Fresh Docs
+# AI Fresh Docs Monorepo
 
-**AI Driven Documentation Management.**
+`AI Fresh Docs` — набор инструментов для синхронизации документации зависимостей
+под точные версии из lock-файлов (Rust/NPM), чтобы AI-ассистенты работали с
+актуальным контекстом.
 
-`AI Fresh Docs` is a suite of tools that bridge the knowledge gap between AI training data and the exact dependency versions used in your project. It fetches, condenses, and indexes documentation for RAG.
+## Что находится в этом репозитории
 
 ## Repository architecture map (source of truth)
 
@@ -31,51 +33,44 @@ Rust/NPM/VS Code parts, start here.
 
 ## The Suite (3 Editions)
 
-To avoid confusion, this repository hosts **three distinct versions** of the tool:
+1. **Rust CLI (cargo plugin)** 🦀
+   - Папка: [`cargo/`](./cargo)
+   - Бинарь: `cargo-ai-fdocs` (команда: `cargo ai-fdocs ...`)
+   - Назначение: базовый движок (резолв версий, скачивание, кэш, индексация)
 
-1. **AI Fresh Docs Core (Rust)** 🦀
-    * **Location**: Root directory (`src/`)
-    * **Binary**: `cargo-ai-fdocs`
-    * **Purpose**: The high-performance engine. Handles heavy lifting, caching, and parsing.
+2. **NPM CLI** 📦
+   - Папка: [`npm/`](./npm)
+   - Бинарь: `ai-fdocs`
+   - Назначение: аналогичный CLI-контур для Node.js/TypeScript проектов
 
-2. **AI Fresh Docs for NPM (Node.js)** 📦
-    * **Location**: [`npn/`](./npn)
-    * **Binary**: `ai-fdocs` (via npm)
-    * **Purpose**: A native wrapper for JavaScript/TypeScript developers using `package.json`.
+3. **VS Code Extension** 🆚
+   - Папка: [`vscode/`](./vscode)
+   - Назначение: UI-обертка над CLI-командами внутри редактора
 
-3. **AI Fresh Docs for VS Code** 🆚
-    * **Location**: [`vscode/`](./vscode)
-    * **Extension**: `ai-fdocs-vscode`
-    * **Purpose**: GUI extension to manage docs directly in the editor.
+## Текущее состояние
 
-It syncs README/CHANGELOG/guides from GitHub repositories for versions pinned in
-`Cargo.lock`, then stores them locally under `fdocs` so
-Cursor, Copilot, Windsurf, and other assistants can use up-to-date context.
+- Папки `cargo/`, `npm/`, `vscode/` подготовлены к дальнейшему выделению в
+  отдельные репозитории.
+- Контракты команд выровнены (`init`, `sync`, `status`, `check`) с поправками
+  на экосистему.
+- Документация в корне содержит общий контекст, а детальная документация живет
+  внутри соответствующих подпроектов.
 
-## Repository layout (Rust + NPM versions)
+## Быстрая навигация
 
-This repository currently contains **two aligned implementations** of AI Fresh Docs:
+- Rust CLI: [`cargo/README` и docs](./cargo)
+- Архитектура Rust/NPM: [`cargo/docs/architecture/README.md`](./cargo/docs/architecture/README.md)
+- NPM CLI: [`npm/README.md`](./npm/README.md)
+- VS Code extension: [`vscode/README.md`](./vscode/README.md)
+- Общий roadmap: [`ROADMAP.md`](./ROADMAP.md)
 
-* Rust CLI (`cargo-ai-fdocs`) in the repository root (`src/`, Cargo-based toolchain);
-* NPM/Node.js CLI (`npm-ai-fdocs`) in [`npn/`](./npn).
+## Почему это полезно
 
-The `npn/` folder is the NPM version of AI Fresh Docs and is expected to stay
-functionally aligned with the main implementation, with ecosystem-specific
-adaptations for NPM (lockfile/dependency resolution, package metadata source,
-Node build/test toolchain).
+Проблема: AI часто использует устаревшие API из старых данных обучения.
 
-Alignment policy for `npn/`:
-
-* same core command surface: `init`, `sync`, `status`, `check`;
-* same output layout principles (`_INDEX.md`, per-package folders, metadata);
-* same cache/status semantics where possible, adapted for npm packages.
-
-## Detailed technical documentation
-
-See [`docs/architecture`](./docs/architecture):
-
-* [Core Rust module](./docs/architecture/rust-module.md)
-* [NPM clone](./docs/architecture/npm-clone.md)
+Решение: `ai-fdocs` подтягивает README/CHANGELOG/гайды для **конкретных версий**
+зависимостей, складывает их в локальную папку `fdocs`, и этот индекс используют
+Cursor/Copilot/Windsurf и другие ассистенты.
 
 ## Why this exists
 
@@ -264,7 +259,7 @@ In CI (`cargo ai-fdocs check`), failures include per-crate reasons; in GitHub Ac
 `ai-fdocs` is designed as a modular platform with a high-performance core and multiple interfaces:
 
 * **Core (`src/`)**: The Rust-based engine handling fetching, parsing, caching, and AI summarization.
-* **NPM CLI (`npn/`)**: A Node.js wrapper providing a native experience for JavaScript/TypeScript developers.
+* **NPM CLI (`npm/`)**: A Node.js implementation providing a native experience for JavaScript/TypeScript developers.
 * **VS Code Extension (`vscode/`)**: A planned graphical interface for managing documentation directly in the editor.
 
 Future plans include adapters for Python (PyPI), Go, and other ecosystems.
