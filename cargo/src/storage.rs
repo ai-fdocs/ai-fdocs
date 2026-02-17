@@ -363,6 +363,7 @@ pub fn save_latest_api_markdown(
     api_markdown: &str,
     docsrs_input_url: &str,
     truncated: bool,
+    max_file_size_kb: usize,
     crate_config: &CrateDoc,
 ) -> Result<SavedCrate> {
     let crate_dir = output_dir.join(format!("{crate_name}@{version}"));
@@ -398,7 +399,7 @@ pub fn save_latest_api_markdown(
         truncation_marker: if truncated {
             Some(format!(
                 "[TRUNCATED by ai-fdocs at {}KB]",
-                crate_config.max_file_size_kb
+                max_file_size_kb
             ))
         } else {
             None
@@ -565,7 +566,7 @@ mod tests {
     fn test_truncate_large_file() {
         let content = "x".repeat(300 * 1024);
         let result = truncate_if_needed(&content, 200);
-        assert!(result.contains("[TRUNCATED by ai-fdocs at 200KB]"));
+        assert!(result.0.contains("[TRUNCATED by ai-fdocs at 200KB]"));
     }
 
     #[test]
@@ -584,9 +585,9 @@ mod tests {
             ai_notes: String::new(),
         };
 
-        let fp1 = crate_config_fingerprint(&cfg);
+        let fp1 = cfg.config_hash();
         cfg.repo = Some("tokio-rs/tokio".to_string());
-        let fp2 = crate_config_fingerprint(&cfg);
+        let fp2 = cfg.config_hash();
 
         assert_ne!(fp1, fp2);
     }

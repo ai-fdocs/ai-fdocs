@@ -337,7 +337,7 @@ fn strip_html_tags(crate_name: &str, version: &str, html: &str) -> String {
 fn extract_href(tag: &str) -> Option<String> {
     let tag_lower = tag.to_lowercase();
     let href_start = tag_lower.find("href=")?;
-    let mut val_part = &tag[href_start + 5..].trim_start();
+    let mut val_part = tag[href_start + 5..].trim_start();
     
     if val_part.starts_with('"') || val_part.starts_with('\'') {
         let quote = val_part.chars().next().unwrap();
