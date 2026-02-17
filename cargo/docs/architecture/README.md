@@ -1,6 +1,13 @@
-# AI Fresh Docs — Architecture and Operations
+# AI Fresh Docs — Rust/NPM Technical Architecture
 
-This folder contains technical documentation for both project implementations:
+> This section is **implementation-level technical documentation** for the
+> Rust and NPM standalone libraries.
+>
+> It is **not** the global architecture map of the monorepository.
+> For the repo-wide map and component boundaries, see root
+> [`README.md`](../../../README.md).
+
+This folder contains technical documentation for two implementation tracks:
 
 - **Core module (Rust CLI `cargo-ai-fdocs`)**
 - **NPM clone (Node.js/TypeScript CLI in `npn/`)**
