@@ -82,7 +82,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const binaryInfo = binaryManager.getBinaryInfo();
     outputChannel.appendLine(
-        `Using ai-fdocs binary: ${binaryInfo?.path} (${binaryInfo?.type}) v${binaryInfo?.version}`
+        `Using ai-fdocs binary: ${binaryInfo?.command.executable} (${binaryInfo?.type}) v${binaryInfo?.version}`
     );
     outputChannel.appendLine(`Engine selected: ${activeEngine}`);
 
