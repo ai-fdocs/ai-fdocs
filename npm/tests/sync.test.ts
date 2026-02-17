@@ -19,10 +19,12 @@ describe("sync summaries", () => {
         status: "synced",
         source: "npm_tarball",
       },
+      { saved: null, status: "cached", source: "npm_readme_metadata" },
     ]);
 
     expect(stats.github).toEqual({ synced: 0, cached: 1, skipped: 1, errors: 1 });
     expect(stats.npm_tarball).toEqual({ synced: 1, cached: 0, skipped: 0, errors: 0 });
+    expect(stats.npm_readme_metadata).toEqual({ synced: 0, cached: 1, skipped: 0, errors: 0 });
   });
 
   it("aggregates error codes for short summary", () => {

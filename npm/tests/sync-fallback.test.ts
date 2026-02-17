@@ -91,10 +91,13 @@ describe("cmdSync github fallback", () => {
 
     vi.spyOn(console, "log").mockImplementation((msg?: unknown) => logs.push(String(msg ?? "")));
     vi.spyOn(GitHubClient.prototype, "resolveRef").mockRejectedValue(new AiDocsError("No suitable git ref found", "NO_REF"));
+    const readmeSpy = vi.spyOn(NpmRegistryClient.prototype, "getReadme").mockResolvedValue("# registry docs");
     vi.spyOn(NpmRegistryClient.prototype, "getTarballUrl").mockResolvedValue("https://registry.example/lodash.tgz");
     vi.spyOn(fetcher, "fetchDocsFromNpmTarball").mockResolvedValue([{ path: "README.md", content: "# docs" }]);
 
     await cmdSync(root, { force: false, reportFormat: "json" });
+
+    expect(readmeSpy).not.toHaveBeenCalled();
 
     const report = JSON.parse(logs.at(-1) ?? "{}");
     expect(report.source).toBe("github");
