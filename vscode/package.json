@@ -67,6 +67,21 @@
                 "command": "ai-fdocs.init",
                 "title": "AI-Docs: Init",
                 "icon": "$(file-add)"
+            },
+            {
+                "command": "ai-fdocs.forceRefreshPackage",
+                "title": "AI-Docs: Force Refresh Package",
+                "icon": "$(sync-ignored)"
+            },
+            {
+                "command": "ai-fdocs.openSummary",
+                "title": "AI-Docs: Open _SUMMARY.md",
+                "icon": "$(book)"
+            },
+            {
+                "command": "ai-fdocs.openProvenanceUrl",
+                "title": "AI-Docs: Open Source Provenance URL",
+                "icon": "$(link-external)"
             }
         ],
         "viewsContainers": {
@@ -126,8 +141,19 @@
             ],
             "view/item/context": [
                 {
-                    "command": "ai-fdocs.openDocs",
-                    "when": "view == ai-fdocs-dependencies && viewItem == package"
+                    "command": "ai-fdocs.forceRefreshPackage",
+                    "when": "view == ai-fdocs-dependencies && viewItem == package",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "ai-fdocs.openSummary",
+                    "when": "view == ai-fdocs-dependencies && viewItem == package",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "ai-fdocs.openProvenanceUrl",
+                    "when": "view == ai-fdocs-dependencies && viewItem == package",
+                    "group": "navigation@2"
                 }
             ]
         },
