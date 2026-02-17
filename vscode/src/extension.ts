@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BinaryManager } from './binary-manager';
 import { ProjectDetector, ProjectInfo } from './project-detector';
-import { DependencyTreeProvider } from './dependency-tree-provider';
+import { DependencyItem, DependencyTreeProvider } from './dependency-tree-provider';
 import { runUnifiedCommand } from './commands';
 import { CommandContext } from './core/command-types';
 import { DocsSource, SyncMode } from './sources/source-types';
@@ -12,6 +12,12 @@ let projectDetector: ProjectDetector;
 let treeDataProvider: DependencyTreeProvider;
 let statusBarItem: vscode.StatusBarItem;
 let currentProject: ProjectInfo | null = null;
+
+function getActiveSyncMode(): SyncMode {
+    const config = vscode.workspace.getConfiguration('ai-fdocs');
+    return config.get<SyncMode>('syncMode') ?? 'lockfile';
+}
+
 
 function createCommandContext(cancellationToken: vscode.CancellationToken): CommandContext {
     const config = vscode.workspace.getConfiguration('ai-fdocs');
@@ -112,6 +118,51 @@ export async function activate(context: vscode.ExtensionContext) {
     registerUnifiedCommand('ai-fdocs.prune', 'prune');
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('ai-fdocs.forceRefreshPackage', async (item?: DependencyItem) => {
+            const pkgName = item ? item.label : 'selected package';
+            outputChannel.appendLine(`Force refresh package requested: ${pkgName}`);
+            await runUnifiedCommand('syncForce', outputChannel, createCommandContext, async () => {
+                await treeDataProvider.refresh();
+                updateStatusBar();
+            });
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('ai-fdocs.openSummary', async (item?: DependencyItem) => {
+            if (!item) {
+                vscode.window.showWarningMessage('No package selected.');
+                return;
+            }
+
+            const summaryPath = item.getSummaryPath();
+            if (!summaryPath) {
+                vscode.window.showWarningMessage(`_SUMMARY.md not found for ${item.label}.`);
+                return;
+            }
+
+            await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(summaryPath));
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('ai-fdocs.openProvenanceUrl', async (item?: DependencyItem) => {
+            if (!item) {
+                vscode.window.showWarningMessage('No package selected.');
+                return;
+            }
+
+            const url = item.getProvenanceUrl();
+            if (!url) {
+                vscode.window.showWarningMessage(`Source provenance URL not available for ${item.label}.`);
+                return;
+            }
+
+            await vscode.env.openExternal(vscode.Uri.parse(url));
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('ai-fdocs.refresh', async () => {
             await treeDataProvider.refresh();
             updateStatusBar();
@@ -145,6 +196,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (e.affectsConfiguration('ai-fdocs')) {
                 outputChannel.appendLine('Configuration changed, refreshing...');
                 treeDataProvider.refresh();
+                updateStatusBar();
             }
         })
     );
@@ -158,10 +210,11 @@ function updateStatusBar() {
     }
 
     const emoji = ProjectDetector.getProjectEmoji(currentProject.type);
-    const typeName = ProjectDetector.getProjectTypeName(currentProject.type);
+    const mode = getActiveSyncMode();
+    const health = treeDataProvider.getHealthSummary();
 
-    statusBarItem.text = `${emoji} ${typeName} - AI Docs`;
-    statusBarItem.tooltip = 'Click to refresh documentation status';
+    statusBarItem.text = `${emoji} AI Docs: ${health.synced} synced / ${health.outdated} outdated / ${health.errors} errors · ${mode}`;
+    statusBarItem.tooltip = `Mode: ${mode}. Click to refresh documentation status`;
 }
 
 export function deactivate() {
