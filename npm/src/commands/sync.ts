@@ -125,12 +125,14 @@ async function tryFetchFromNpm(
   name: string,
   version: string,
   subpath?: string,
-  files?: string[]
+  files?: string[],
+  options?: { preferReadmeMetadata?: boolean }
 ): Promise<{ files: FetchedFile[] } | { error: { message: string; code?: string } }> {
   try {
+    const preferReadmeMetadata = options?.preferReadmeMetadata ?? true;
     // Fast path: try to get README from registry metadata if no explicit files or only README is requested
     const isReadmeOnly = !files || (files.length === 1 && files[0].toLowerCase() === "readme.md");
-    if (isReadmeOnly && !subpath) {
+    if (preferReadmeMetadata && isReadmeOnly && !subpath) {
       const readme = await npmRegistry.getReadme(name, version);
       if (readme) {
         return { files: [{ path: "README.md", content: readme }] };
@@ -311,7 +313,9 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
         } catch (e) {
           const primaryErr = toErrorInfo(e);
           // Try npm fallback
-          const npmFallback = await tryFetchFromNpm(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+          const npmFallback = await tryFetchFromNpm(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files, {
+            preferReadmeMetadata: false,
+          });
           if ("error" in npmFallback) {
             return {
               saved: null,
