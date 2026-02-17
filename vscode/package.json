@@ -211,7 +211,8 @@
                     "default": "lockfile",
                     "enum": [
                         "lockfile",
-                        "latest-docs"
+                        "latest-docs",
+                        "hybrid"
                     ],
                     "description": "Sync strategy to use for resolving documentation versions."
                 },

@@ -9,6 +9,7 @@ import {
 } from './command-types';
 import { SourceKind } from '../sources/source-types';
 import { serializeReport } from './reporting';
+import { toCliSyncMode } from './sync-mode';
 
 interface LegacyCheckIssue {
     name: string;
@@ -97,7 +98,7 @@ export async function runCheckCommand(context: CommandContext): Promise<CommandR
 
     const args = ['check', '--format', 'json'];
     if (context.settings.syncMode) {
-        args.push('--mode', context.settings.syncMode);
+        args.push('--mode', toCliSyncMode(context.settings.syncMode));
     }
     if (context.settings.docsSource) {
         args.push('--docs-source', context.settings.docsSource);

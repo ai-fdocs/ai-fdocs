@@ -6,6 +6,7 @@ import {
     normalizeSourceMetrics,
     parseJsonOutput,
 } from './command-types';
+import { toCliSyncMode } from './sync-mode';
 
 interface SyncJsonReport {
     totals?: Partial<SourceMetrics>;
@@ -27,7 +28,7 @@ export async function runSyncCommand(
         args.push('--force');
     }
     if (context.settings.syncMode) {
-        args.push('--mode', context.settings.syncMode);
+        args.push('--mode', toCliSyncMode(context.settings.syncMode));
     }
     if (context.settings.docsSource) {
         args.push('--docs-source', context.settings.docsSource);

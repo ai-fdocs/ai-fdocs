@@ -49,7 +49,7 @@ Validation rules mirror CLI constraints for shared fields:
 - `sync_concurrency` must be an integer between `1` and `50`.
 - `latest_ttl_hours` must be an integer `> 0`.
 - `docs_source`: `github | npm_tarball`.
-- `sync_mode`: `lockfile | latest-docs` (with `latest_docs` normalized when loaded from TOML).
+- `sync_mode`: `lockfile | latest-docs | hybrid` (CLI uses `latest_docs`; UI/TOML `latest-docs` is normalized automatically).
 - `engine`: `internal | external-cli`.
 - `report_format`: `text | json`.
 - `format`: `table | json`.
@@ -63,7 +63,7 @@ Validation rules mirror CLI constraints for shared fields:
 | Sync concurrency | `settings.sync_concurrency` | `settings.sync_concurrency` | `ai-fdocs.syncConcurrency` |
 | Prune stale docs | `settings.prune` | `settings.prune` | `ai-fdocs.prune` |
 | Docs source | `settings.docs_source` (`github`) | `settings.docs_source` (`github|npm_tarball`) | `ai-fdocs.docsSource` (`github|npm_tarball`) |
-| Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs`) |
+| Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs|hybrid`) |
 | Engine | n/a (selected by extension) | n/a (selected by extension) | `ai-fdocs.engine` (`internal|external-cli`) |
 | Latest TTL (hours) | `settings.latest_ttl_hours` | `settings.latest_ttl_hours` | `ai-fdocs.latestTtlHours` |
 | Report format | CLI flag (`--report-format`) | CLI flag (`--report-format`) | `ai-fdocs.reportFormat` |

@@ -4,6 +4,7 @@ import { ProjectDetector, ProjectInfo } from './project-detector';
 import { DependencyItem, DependencyTreeProvider } from './dependency-tree-provider';
 import { runUnifiedCommand } from './commands';
 import { CommandContext, CommandExecutor, EngineName } from './core/command-types';
+import { normalizeSyncMode } from './core/sync-mode';
 import { DocsSource, SyncMode } from './sources/source-types';
 import { createEngineExecutor, resolveEngine } from './engine';
 import { ExtensionDiagnostics } from './core/diagnostics';
@@ -29,7 +30,7 @@ function getActiveEngine(context?: vscode.ExtensionContext): EngineName {
 
 function getActiveSyncMode(): SyncMode {
     const config = vscode.workspace.getConfiguration('ai-fdocs');
-    return config.get<SyncMode>('syncMode') ?? 'lockfile';
+    return normalizeSyncMode(config.get<string>('syncMode'));
 }
 
 
@@ -39,7 +40,7 @@ function createCommandContext(cancellationToken: vscode.CancellationToken): Comm
     return {
         workspaceRoot: currentProject?.rootPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
         settings: {
-            syncMode: (config.get<SyncMode>('syncMode') ?? 'lockfile'),
+            syncMode: normalizeSyncMode(config.get<string>('syncMode')),
             reportFormat: 'json',
             docsSource: config.get<DocsSource>('docsSource') ?? 'npm_tarball',
         },
