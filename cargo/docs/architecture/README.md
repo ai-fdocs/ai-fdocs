@@ -3,7 +3,7 @@
 This folder contains technical documentation for both project implementations:
 
 - **Core module (Rust CLI `cargo-ai-fdocs`)**
-- **NPM clone (Node.js/TypeScript CLI in `npn/`)**
+- **NPM clone (Node.js/TypeScript CLI in `npm/`)**
 
 ## Navigation
 

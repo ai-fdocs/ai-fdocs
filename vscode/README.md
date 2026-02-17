@@ -175,7 +175,7 @@ All heavy lifting (fetching, parsing, caching) is done by the Rust/NPM CLI, ensu
 
 ## Contributing
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines.
+See project documentation in [SETUP.md](./SETUP.md) for development guidelines.
 
 ## License
 
