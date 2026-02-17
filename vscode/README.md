@@ -139,7 +139,7 @@ Configure the extension via VS Code settings:
 | Sync concurrency | `settings.sync_concurrency` | `settings.sync_concurrency` | `ai-fdocs.syncConcurrency` |
 | Prune stale docs | `settings.prune` | `settings.prune` | `ai-fdocs.prune` |
 | Docs source | `settings.docs_source` (`github`) | `settings.docs_source` (`github|npm_tarball`) | `ai-fdocs.docsSource` (`github|npm_tarball`) |
-| Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs`) |
+| Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs|hybrid`) |
 | Engine | n/a (selected by extension) | n/a (selected by extension) | `ai-fdocs.engine` (`internal|external-cli`) |
 | Latest TTL (hours) | `settings.latest_ttl_hours` | `settings.latest_ttl_hours` | `ai-fdocs.latestTtlHours` |
 | Report format | CLI flag (`--report-format`) | CLI flag (`--report-format`) | `ai-fdocs.reportFormat` |
@@ -152,7 +152,7 @@ Configure the extension via VS Code settings:
 | `sync` | `--docs-source` | ✅ Supported | ✅ Supported | Passed through by engine argument normalizer |
 | `status` | `--docs-source` | ✅ Supported | ✅ Supported | Passed through by engine argument normalizer |
 | `check` | `--docs-source` | ✅ Supported | ✅ Supported | Passed through by engine argument normalizer |
-| `sync/status/check` | `--mode latest-docs` | ❌ (expects `latest_docs`) | ❌ (expects `latest_docs`) | Normalized to `latest_docs` automatically |
+| `sync/status/check` | `--mode latest-docs` | ❌ (expects `latest_docs`) | ❌ (expects `latest_docs`) | Normalized to `latest_docs` for CLI and displayed back as `latest-docs` in UI |
 
 ## Migration to `ai-fdocs.engine`
 

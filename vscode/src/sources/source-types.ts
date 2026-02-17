@@ -1,6 +1,6 @@
 export type SourceKind = 'docsrs' | 'npm_tarball' | 'github' | 'github_fallback' | 'mixed';
 
-export type SyncMode = 'lockfile' | 'latest-docs';
+export type SyncMode = 'lockfile' | 'latest-docs' | 'hybrid';
 export type DocsSource = 'github' | 'npm_tarball';
 
 export type RequestErrorKind =
