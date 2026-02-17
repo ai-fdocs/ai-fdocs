@@ -1,9 +1,12 @@
+import { DocsSource, SourceKind, SyncMode } from './sources/source-types';
+
 export interface StatusSummary {
     total: number;
     synced: number;
     missing: number;
     outdated: number;
     corrupted: number;
+    by_source?: Partial<Record<SourceKind, number>>;
 }
 
 export interface DependencyStatus {
@@ -14,7 +17,7 @@ export interface DependencyStatus {
     status: 'Synced' | 'SyncedFallback' | 'Outdated' | 'Missing' | 'Corrupted';
     reason?: string;
     mode?: string;
-    source_kind?: string;
+    source_kind?: SourceKind;
     reason_code?: string;
 }
 
@@ -23,8 +26,6 @@ export interface StatusOutput {
     statuses: DependencyStatus[];
 }
 
-export type DocsSource = 'github' | 'npm_tarball';
-export type SyncMode = 'lockfile' | 'latest-docs';
 export type ReportFormat = 'text' | 'json';
 export type TableFormat = 'table' | 'json';
 

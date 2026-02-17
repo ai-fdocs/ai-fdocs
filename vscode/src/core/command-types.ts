@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { BinaryManager } from '../binary-manager';
+import { DocsSource, SyncMode } from '../sources/source-types';
 
 export interface CommandLogger {
     info(message: string): void;
@@ -9,8 +10,9 @@ export interface CommandLogger {
 }
 
 export interface CommandSettings {
-    syncMode?: 'lockfile' | 'latest_docs' | 'hybrid';
+    syncMode?: SyncMode;
     reportFormat?: 'text' | 'json';
+    docsSource?: DocsSource;
 }
 
 export interface CommandContext {

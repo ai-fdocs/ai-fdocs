@@ -7,6 +7,7 @@ import {
     normalizeSourceMetrics,
     parseJsonOutput,
 } from './command-types';
+import { SourceKind } from '../sources/source-types';
 
 interface CheckSummary {
     total: number;
@@ -18,7 +19,7 @@ interface CheckSummary {
 
 interface CheckStatusItem {
     status: 'Synced' | 'SyncedFallback' | 'Outdated' | 'Missing' | 'Corrupted';
-    source_kind?: string;
+    source_kind?: SourceKind;
 }
 
 interface CheckOutput {
@@ -43,6 +44,9 @@ export async function runCheckCommand(context: CommandContext): Promise<CommandR
     if (context.settings.syncMode) {
         args.push('--mode', context.settings.syncMode);
     }
+    if (context.settings.docsSource) {
+        args.push('--docs-source', context.settings.docsSource);
+    }
 
     const { stdout } = await context.binaryManager.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);
@@ -55,7 +59,7 @@ export async function runCheckCommand(context: CommandContext): Promise<CommandR
     metrics.errors = output.summary.outdated + output.summary.corrupted;
 
     for (const item of output.statuses ?? []) {
-        const source = item.source_kind ?? 'unknown';
+        const source = (item.source_kind ?? 'mixed') as string;
         const state = statusToMetrics(item.status);
         const existing = metrics.sourceBreakdown[source] ?? normalizeSourceMetrics();
 

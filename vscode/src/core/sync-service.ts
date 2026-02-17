@@ -30,6 +30,9 @@ export async function runSyncCommand(
     if (context.settings.syncMode) {
         args.push('--mode', context.settings.syncMode);
     }
+    if (context.settings.docsSource) {
+        args.push('--docs-source', context.settings.docsSource);
+    }
 
     const { stdout } = await context.binaryManager.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);

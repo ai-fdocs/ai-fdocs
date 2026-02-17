@@ -9,6 +9,7 @@ import { runSyncCommand } from './core/sync-service';
 import { runStatusCommand } from './core/status-service';
 import { runCheckCommand } from './core/check-service';
 import { runPruneCommand } from './core/prune-service';
+import { DocsSource, SyncMode } from './sources/source-types';
 
 let outputChannel: vscode.OutputChannel;
 let binaryManager: BinaryManager;
@@ -23,8 +24,9 @@ function createCommandContext(cancellationToken: vscode.CancellationToken): Comm
     return {
         workspaceRoot: currentProject?.rootPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
         settings: {
-            syncMode: config.get<'lockfile' | 'latest_docs' | 'hybrid'>('syncMode') ?? 'lockfile',
+            syncMode: (config.get<SyncMode>('syncMode') ?? 'lockfile'),
             reportFormat: 'json',
+            docsSource: config.get<DocsSource>('docsSource') ?? 'npm_tarball',
         },
         logger: {
             info: message => outputChannel.appendLine(message),
