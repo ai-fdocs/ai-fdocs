@@ -26,6 +26,9 @@ export async function runStatusCommand(context: CommandContext): Promise<Command
     if (context.settings.syncMode) {
         args.push('--mode', context.settings.syncMode);
     }
+    if (context.settings.docsSource) {
+        args.push('--docs-source', context.settings.docsSource);
+    }
 
     const { stdout } = await context.binaryManager.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);
@@ -35,7 +38,7 @@ export async function runStatusCommand(context: CommandContext): Promise<Command
     const metrics = createEmptyMetrics();
 
     for (const item of output.statuses) {
-        const source = item.source_kind ?? 'unknown';
+        const source = (item.source_kind ?? 'mixed') as string;
         const state = accumulateByStatus(item);
 
         metrics.synced += state.synced;
