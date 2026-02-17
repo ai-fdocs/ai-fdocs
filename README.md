@@ -6,7 +6,32 @@
 
 ## Что находится в этом репозитории
 
-> После переноса модулей структура стала монорепо. Ниже — актуальная карта.
+## Repository architecture map (source of truth)
+
+The **main architecture map for this monorepo** lives in this root `README.md`.
+If you need a top-level view of repository structure and boundaries between
+Rust/NPM/VS Code parts, start here.
+
+> Technical internals for the Rust and NPM standalone implementations are documented in
+> [`cargo/docs/architecture/README.md`](./cargo/docs/architecture/README.md)
+> and linked pages.
+
+## Doc ownership
+
+> [!NOTE]
+> During repository reorganization, keep these docs aligned:
+>
+> - **Root `README.md` (this file)** — monorepo architecture map, product positioning,
+>   and cross-edition boundaries. **Updated by:** repo maintainers/architects driving
+>   monorepo structure changes.
+> - **`Manifest.md`** — product intent, milestones, roadmap, and delivery plan.
+>   **Updated by:** product/roadmap owners when scope or priorities change.
+> - **`cargo/docs/architecture/README.md` + linked pages** — implementation-level
+>   technical docs for the Rust and NPM implementations (modules, flows, operational behavior).
+>   **Updated by:** Rust/NPM engineering owners whenever module structure or runtime
+>   behavior changes.
+
+## The Suite (3 Editions)
 
 1. **Rust CLI (cargo plugin)** 🦀
    - Папка: [`cargo/`](./cargo)

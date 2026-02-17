@@ -1,36 +1,38 @@
 # AI Fresh Docs (cargo-ai-fdocs) — Manifest (v0.1-alpha, updated)
 
+> Архитектурная карта монорепозитория и границы компонентов: [README.md](./README.md).
+> Техническая документация отдельных Rust/NPM библиотек: [cargo/docs/architecture/README.md](./cargo/docs/architecture/README.md).
 > Отдельный детальный план интеграции latest-docs: `MANIFEST_DOCSRS_LATEST.md`.
 > API-контракт интеграции: `docs/API_CONTRACT.md`.
 
-## 1. Обзор проекта
+## 1. Продуктовая цель
 
 ### Проблема
 AI-ассистенты (Cursor, Copilot, Claude Code и др.) часто генерируют код по устаревшей документации зависимостей.
 
 ### Решение
-`cargo-ai-fdocs` синхронизирует документацию библиотек из GitHub в локальную папку проекта, чтобы AI работал с актуальным контекстом, привязанным к версиям из `Cargo.lock`.
+`cargo-ai-fdocs` синхронизирует документацию библиотек из GitHub в локальную папку проекта, чтобы AI работал с актуальным контекстом, привязанным к версиям из lockfile.
 
-### Базовые принципы
-- **Mirror lock-file:** документация соответствует версии из `Cargo.lock`.
-- **Предсказуемый результат:** повторный запуск при тех же входных данных даёт ту же структуру.
-- **Минимальная инвазивность:** не модифицируем файлы проекта вроде `.gitignore`.
-- **Умные дефолты:** если `files` не заданы — тянем `README.md` и `CHANGELOG.md`.
+### Продуктовые принципы
+- **Точность контекста:** документация соответствует фактически используемым версиям зависимостей.
+- **Предсказуемость:** повторный запуск при одинаковом входе даёт сопоставимый результат.
+- **Низкая инвазивность:** инструмент не вмешивается в исходный код проекта.
+- **Best-effort UX:** частичные сетевые/источниковые сбои не ломают весь поток.
 
----
+## 2. Границы документа
 
-## 2. Текущие реалии репозитория
+Этот манифест фиксирует **только** продуктовые договорённости, план и roadmap.
 
-На текущем этапе в кодовой базе уже есть модули:
-- `config` (чтение TOML-конфига),
-- `resolver` (чтение версий из `Cargo.lock`),
-- `fetcher` (GitHub API + raw content),
-- `processor/changelog` (подрезка CHANGELOG),
-- `index` (генерация `_INDEX.md`),
-- `status` (проверка актуальности скачанной документации).
+Архитектурные подробности (структура монорепо, модули, технические потоки, операционные детали) не дублируются здесь и читаются из:
+- корневого [README.md](./README.md) — общая карта репозитория;
+- [cargo/docs/architecture/README.md](./cargo/docs/architecture/README.md) — техдок отдельных Rust/NPM библиотек.
 
-Поддерживается сценарий Rust-экосистемы (папка `fdocs/rust`).
+## 3. Продуктовый roadmap
 
+### Ближайший этап (alpha → beta hardening)
+- Повысить надёжность синхронизации и прозрачность деградаций.
+- Довести CI-сценарии проверки свежести документации до стабильного контракта.
+- Улучшить UX навигации по синхронизированным документам в больших графах зависимостей.
 ---
 
 
@@ -150,110 +152,21 @@ fdocs/rust/
 - Наблюдаемость: более детальная итоговая статистика `sync` по типам ошибок и источникам.
 
 ### v0.2 (CI-first)
-- Довести `cargo ai-fdocs check` до стабильного CI-контракта (детерминированные exit codes).
-- Добавить machine-readable вывод (`--format json`) для интеграции с CI/reporting.
-- Подготовить готовые рецепты GitHub Actions (sync/check + cache).
-
-В CI-режиме `check` должен показывать причины по каждому проблемному crate; в GitHub Actions — дополнительно печатать `::error` аннотации.
-
-Рецепты для GitHub Actions:
-
-Минимальный `check`:
-```yaml
-- uses: actions/checkout@v4
-- uses: dtolnay/rust-toolchain@stable
-- uses: Swatinem/rust-cache@v2
-- run: cargo ai-fdocs check --format json
-```
-
-Плановый `sync` (manual/schedule) с авто-коммитом обновлённых docs:
-```yaml
-- uses: actions/checkout@v4
-- uses: dtolnay/rust-toolchain@stable
-- uses: Swatinem/rust-cache@v2
-- env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  run: cargo ai-fdocs sync
-- run: |
-    git config user.name "github-actions[bot]"
-    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-    git add fdocs/rust ai-fdocs.toml
-    git diff --cached --quiet || git commit -m "chore: refresh ai-fdocs"
-- run: git push
-```
-
-Вариант с явным cache key (`actions/cache`) для `~/.cargo/*` и `target`:
-```yaml
-- uses: actions/cache@v4
-  with:
-    path: |
-      ~/.cargo/registry
-      ~/.cargo/git
-      target
-    key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    restore-keys: |
-      ${{ runner.os }}-cargo-
-```
-
-JSON-контракт `status/check --format json`:
-- `summary.{total,synced,missing,outdated,corrupted}`
-- `statuses[].{crate_name,lock_version,docs_version,status,reason}`
-- `status in {Synced,SyncedFallback,Outdated,Missing,Corrupted}`
+- Стабилизировать `check` как gate для CI.
+- Поддерживать машиночитаемый формат статусов для автоматизации отчётов.
+- Закрепить типовые CI-рецепты (sync/check + cache стратегия).
 
 ### v0.3 (stability envelope)
-- Для `.aifd-meta.toml` введена схема `schema_version = 1`; legacy-мета без версии мигрируется при чтении, а более новые неизвестные версии считаются несовместимыми.
-- ✅ Улучшен UX `_INDEX.md` для больших dependency graph (навигация, секции, подсказки для AI).
-- ✅ Сообщения CLI унифицированы по всем подкомандам (`sync/status/check/init`).
+- Зафиксировать совместимость форматов метаданных и миграционные правила.
+- Унифицировать CLI/сообщения между ключевыми командами.
 
 ### v1.0 (stable)
-- Финальная стабилизация CLI и формата выходных данных (semver promises).
-- Кроссплатформенные smoke/regression прогоны (Linux/macOS/Windows).
-- Публичная policy-документация: поддерживаемые версии Rust/OS и правила обратной совместимости.
+- Финализировать semver-обещания CLI и форматов данных.
+- Подтвердить кроссплатформенную зрелость через regression/smoke прогоны.
+- Опубликовать публичную policy по поддерживаемым версиям и обратной совместимости.
 
-### Техдолг инструментов (ближайший рефакторинг)
-- ✅ Закрыт `too_many_arguments` для `storage::save_crate_files` через декомпозицию API (`SaveRequest`).
+## 4. Критерии готовности продукта
 
-
-### Статус (текущее состояние)
-- ✅ Retry/backoff и классификация ошибок (auth/rate-limit/not-found/network) внедрены.
-- ✅ CI-контракт `check` + `--format json` + готовые GitHub Actions recipes задокументированы.
-- ✅ Кроссплатформенный smoke matrix (Linux/macOS/Windows) и policy совместимости зафиксированы.
-- ✅ Интеграционные сценарии покрывают fallback на branch и partial failures fetch-пайплайна.
-- ✅ Техдолг `too_many_arguments` вокруг `storage::save_crate_files` снят рефакторингом API.
-- ✅ Сообщения CLI приведены к единому формату для `sync/status/check/init`.
-
-### После v1.0
-- Расширение экосистемы sibling-проектами (Node/npm и далее).
-- docs.rs как дополнительный источник с приоритетной стратегией merge/fallback.
-- docs.rs latest-docs contract уточнён: входной URL `https://docs.rs/crate/{crate}/{version}`, канонический артефакт только `API.md`, обязательные artifact-метаданные в `.aifd-meta.toml`, детерминированная truncate policy и проверяемый DoD по минимальному набору секций (см. `docs/API_CONTRACT.md`).
-
-### Consistency rule (cross-language + VS Code)
-- При изменениях core-контракта библиотеки (CLI-команды, JSON-форматы `status/check`, структура output, схема метаданных) необходимо одновременно обновлять:
-  - `Manifest.md`,
-  - `LANGUAGE_EXPANSION_TECH_SPEC.md`,
-  - документы sibling-реализаций по языкам,
-  - спецификацию/реализацию VS Code-модуля.
-- Цель правила: не допускать расхождения между Rust/NPM и следующими языковыми версиями, а также между CLI и редакторной интеграцией.
-
-### Decision note (Node/npm source strategy)
-- Вопрос о полном отказе от GitHub в npm-версии отмечен как открытый для отдельного обсуждения.
-- Текущее решение: **оставляем как есть** (GitHub-путь как основной, npm tarball как экспериментальный opt-in), чтобы не менять стабильный поток без согласования.
-- Аргумент для обсуждения за упрощение: парсить один источник проще, чем два.
-
----
-
-### Safety policy: donor outage tolerance
-- Под "донорами" понимаются внешние источники документации (GitHub API/raw, registry API, tarball-архивы).
-- При их недоступности инструмент должен переходить в degraded-режим без влияния на основную платформу:
-  - не изменять/ломать исходный код проекта,
-  - не прерывать весь sync из-за одной зависимости,
-  - сохранять локальный кеш и выдавать понятную диагностику.
-- Ошибки доступа к донорам должны отражаться в `status/check` и CI-контракте, но не приводить к поломке runtime приложения.
-
-## 9. Definition of Done для alpha
-
-Считаем alpha готовой, когда:
-- проект стабильно собирается,
-- `sync` зеркалит lock-версии в выходной папке,
-- `status` корректно сигнализирует `synced/outdated/missing`,
-- сетевые и файловые ошибки даются понятными сообщениями.
+- Инструмент воспроизводимо обновляет docs-контекст для AI по lockfile/конфигурации.
+- CI получает однозначный сигнал о состоянии docs (OK/нужна синхронизация/ошибка источника).
+- Для команд разработки документированы и понятны безопасные деградации и границы ответственности.
