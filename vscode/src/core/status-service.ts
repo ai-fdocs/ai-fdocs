@@ -8,6 +8,7 @@ import {
     parseJsonOutput,
 } from './command-types';
 import { DependencyStatus, StatusOutput } from '../types';
+import { serializeReport } from './reporting';
 
 function accumulateByStatus(dependencyStatus: DependencyStatus): SourceMetrics {
     if (dependencyStatus.status === 'Synced' || dependencyStatus.status === 'SyncedFallback') {
@@ -61,6 +62,6 @@ export async function runStatusCommand(context: CommandContext): Promise<Command
         message: 'Status diagnostics completed.',
         metrics,
         data: output,
-        rawOutput: stdout,
+        rawOutput: serializeReport(output),
     };
 }

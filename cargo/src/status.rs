@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::config::Config;
 
@@ -57,6 +57,7 @@ pub struct CrateStatus {
     pub reason_code: String,
     pub mode: String,
     pub source_kind: Option<String>,
+    pub is_fallback: bool,
 }
 
 use crate::storage::CrateMeta;
@@ -70,6 +71,7 @@ fn crate_status(
     reason_code: impl Into<String>,
     mode: StatusMode,
     source_kind: Option<String>,
+    is_fallback: bool,
 ) -> CrateStatus {
     CrateStatus {
         crate_name,
@@ -80,6 +82,7 @@ fn crate_status(
         reason_code: reason_code.into(),
         mode: mode.as_str().to_string(),
         source_kind,
+        is_fallback,
     }
 }
 
@@ -111,6 +114,7 @@ pub async fn collect_status(
                         "lockfile_version_mismatch",
                         StatusMode::Lockfile,
                         None,
+                        false,
                     )
                 } else {
                     crate_status(
@@ -122,16 +126,16 @@ pub async fn collect_status(
                         "lockfile_missing_artifacts",
                         StatusMode::Lockfile,
                         None,
+                        false,
                     )
                 }
             } else {
                 let meta_path = expected_dir.join(".aifd-meta.toml");
                 match std::fs::read_to_string(&meta_path) {
-                    Ok(meta_raw) => {
-                        match toml::from_str::<CrateMeta>(&meta_raw) {
-                            Ok(meta) => {
-                                if meta.schema_version > 1 {
-                                    crate_status(
+                    Ok(meta_raw) => match toml::from_str::<CrateMeta>(&meta_raw) {
+                        Ok(meta) => {
+                            if meta.schema_version > 1 {
+                                crate_status(
                                         crate_name,
                                         Some(lock_version.clone()),
                                         Some(lock_version),
@@ -143,11 +147,12 @@ pub async fn collect_status(
                                         "meta_schema_unsupported",
                                         StatusMode::Lockfile,
                                         meta.source_kind.clone(),
+                                        false,
                                     )
-                                } else {
-                                    let docs_version = meta.version.clone();
-                                    if docs_version != lock_version {
-                                        crate_status(
+                            } else {
+                                let docs_version = meta.version.clone();
+                                if docs_version != lock_version {
+                                    crate_status(
                                             crate_name,
                                             Some(lock_version.clone()),
                                             Some(docs_version.clone()),
@@ -156,58 +161,58 @@ pub async fn collect_status(
                                             "meta_version_mismatch",
                                             StatusMode::Lockfile,
                                             meta.source_kind.clone(),
+                                            false,
                                         )
-                                    } else if meta.is_fallback {
-                                        crate_status(
-                                            crate_name,
-                                            Some(lock_version),
-                                            Some(docs_version),
-                                            DocsStatus::SyncedFallback,
-                                            "synced from fallback branch (no exact tag found)",
-                                            "lockfile_fallback_branch",
-                                            StatusMode::Lockfile,
-                                            Some("github_fallback".to_string()),
-                                        )
-                                    } else {
-                                        crate_status(
-                                            crate_name,
-                                            Some(lock_version),
-                                            Some(docs_version),
-                                            DocsStatus::Synced,
-                                            "up to date",
-                                            "lockfile_ok",
-                                            StatusMode::Lockfile,
-                                            Some("github".to_string()),
-                                        )
-                                    }
+                                } else if meta.is_fallback {
+                                    crate_status(
+                                        crate_name,
+                                        Some(lock_version),
+                                        Some(docs_version),
+                                        DocsStatus::SyncedFallback,
+                                        "synced from fallback branch (no exact tag found)",
+                                        "lockfile_fallback_branch",
+                                        StatusMode::Lockfile,
+                                        Some("github_fallback".to_string()),
+                                        true,
+                                    )
+                                } else {
+                                    crate_status(
+                                        crate_name,
+                                        Some(lock_version),
+                                        Some(docs_version),
+                                        DocsStatus::Synced,
+                                        "up to date",
+                                        "lockfile_ok",
+                                        StatusMode::Lockfile,
+                                        Some("github".to_string()),
+                                        false,
+                                    )
                                 }
                             }
-                            Err(_) => {
-                                crate_status(
-                                    crate_name,
-                                    Some(lock_version.clone()),
-                                    Some(lock_version),
-                                    DocsStatus::Corrupted,
-                                    ".aifd-meta.toml has invalid TOML",
-                                    "meta_invalid_toml",
-                                    StatusMode::Lockfile,
-                                    None,
-                                )
-                            }
                         }
-                    }
-                    Err(_) => {
-                        crate_status(
+                        Err(_) => crate_status(
                             crate_name,
                             Some(lock_version.clone()),
                             Some(lock_version),
                             DocsStatus::Corrupted,
-                            ".aifd-meta.toml is missing or unreadable",
-                            "meta_unreadable",
+                            ".aifd-meta.toml has invalid TOML",
+                            "meta_invalid_toml",
                             StatusMode::Lockfile,
                             None,
-                        )
-                    }
+                            false,
+                        ),
+                    },
+                    Err(_) => crate_status(
+                        crate_name,
+                        Some(lock_version.clone()),
+                        Some(lock_version),
+                        DocsStatus::Corrupted,
+                        ".aifd-meta.toml is missing or unreadable",
+                        "meta_unreadable",
+                        StatusMode::Lockfile,
+                        None,
+                        false,
+                    ),
                 }
             }
         } else {
@@ -220,6 +225,7 @@ pub async fn collect_status(
                 "lockfile_missing_crate",
                 StatusMode::Lockfile,
                 None,
+                false,
             )
         };
         results.push(status);
@@ -259,10 +265,15 @@ pub async fn collect_status_latest(
                                     "meta_schema_unsupported",
                                     StatusMode::LatestDocs,
                                     meta.source_kind.clone(),
+                                    false,
                                 )
                             } else {
-                                let source_kind = meta.source_kind.clone().unwrap_or_else(|| "docsrs".to_string());
-                                let is_fallback = meta.is_fallback || source_kind == "github_fallback";
+                                let source_kind = meta
+                                    .source_kind
+                                    .clone()
+                                    .unwrap_or_else(|| "docsrs".to_string());
+                                let is_fallback =
+                                    meta.is_fallback || source_kind == "github_fallback";
 
                                 // Check freshness if fetcher is provided
                                 let mut status = if is_fallback {
@@ -276,7 +287,7 @@ pub async fn collect_status_latest(
                                     "latest-docs up to date".to_string()
                                 };
                                 let mut reason_code = if is_fallback {
-                                    "latest_ok_fallback".to_string()
+                                    "fallback_used".to_string()
                                 } else {
                                     "latest_ok_docsrs".to_string()
                                 };
@@ -284,17 +295,45 @@ pub async fn collect_status_latest(
                                 if let Some(f) = fetcher {
                                     let mut needs_check = true;
                                     if let Some(checked_at) = &meta.upstream_checked_at {
-                                        if crate::utils::is_latest_cache_fresh(checked_at, config.settings.latest_ttl_hours) {
+                                        if crate::utils::is_latest_cache_fresh(
+                                            checked_at,
+                                            config.settings.latest_ttl_hours,
+                                        ) {
                                             needs_check = false;
                                         }
                                     }
 
                                     if needs_check {
-                                        if let Ok(latest) = f.resolve_latest_version(&crate_name).await {
+                                        status = DocsStatus::Outdated;
+                                        reason = format!(
+                                            "upstream freshness TTL expired (>{}h)",
+                                            config.settings.latest_ttl_hours
+                                        );
+                                        reason_code = "ttl_expired".to_string();
+
+                                        if let Ok(latest) =
+                                            f.resolve_latest_version(&crate_name).await
+                                        {
                                             if latest != docs_version {
-                                                status = DocsStatus::Outdated;
                                                 reason = format!("latest version {latest} is newer than cached {docs_version}");
-                                                reason_code = "latest_version_mismatch".to_string();
+                                                reason_code = "upstream_changed".to_string();
+                                            } else {
+                                                status = if is_fallback {
+                                                    DocsStatus::SyncedFallback
+                                                } else {
+                                                    DocsStatus::Synced
+                                                };
+                                                reason = if is_fallback {
+                                                    "latest-docs synced via GitHub fallback"
+                                                        .to_string()
+                                                } else {
+                                                    "latest-docs up to date".to_string()
+                                                };
+                                                reason_code = if is_fallback {
+                                                    "fallback_used".to_string()
+                                                } else {
+                                                    "latest_ok_docsrs".to_string()
+                                                };
                                             }
                                         }
                                     }
@@ -309,35 +348,34 @@ pub async fn collect_status_latest(
                                     reason_code,
                                     StatusMode::LatestDocs,
                                     Some(source_kind),
+                                    is_fallback,
                                 )
                             }
                         }
-                        Err(_) => {
-                            crate_status(
-                                crate_name.clone(),
-                                None,
-                                Some(docs_version),
-                                DocsStatus::Corrupted,
-                                ".aifd-meta.toml has invalid TOML",
-                                "meta_invalid_toml",
-                                StatusMode::LatestDocs,
-                                None,
-                            )
-                        }
+                        Err(_) => crate_status(
+                            crate_name.clone(),
+                            None,
+                            Some(docs_version),
+                            DocsStatus::Corrupted,
+                            ".aifd-meta.toml has invalid TOML",
+                            "meta_invalid_toml",
+                            StatusMode::LatestDocs,
+                            None,
+                            false,
+                        ),
                     }
                 }
-                Err(_) => {
-                    crate_status(
-                        crate_name.clone(),
-                        None,
-                        Some(docs_version),
-                        DocsStatus::Corrupted,
-                        ".aifd-meta.toml is missing or unreadable",
-                        "meta_unreadable",
-                        StatusMode::LatestDocs,
-                        None,
-                    )
-                }
+                Err(_) => crate_status(
+                    crate_name.clone(),
+                    None,
+                    Some(docs_version),
+                    DocsStatus::Corrupted,
+                    ".aifd-meta.toml is missing or unreadable",
+                    "meta_unreadable",
+                    StatusMode::LatestDocs,
+                    None,
+                    false,
+                ),
             }
         } else {
             crate_status(
@@ -349,6 +387,7 @@ pub async fn collect_status_latest(
                 "latest_missing_artifacts",
                 StatusMode::LatestDocs,
                 None,
+                false,
             )
         };
         results.push(status);
@@ -358,7 +397,7 @@ pub async fn collect_status_latest(
 
 fn scan_existing_dirs(output_dir: &Path) -> HashMap<String, (String, PathBuf)> {
     let mut map: HashMap<String, (String, PathBuf)> = HashMap::new();
-    
+
     let Ok(entries) = std::fs::read_dir(output_dir) else {
         return map;
     };
@@ -370,11 +409,11 @@ fn scan_existing_dirs(output_dir: &Path) -> HashMap<String, (String, PathBuf)> {
 
         let dir_name = entry.file_name();
         let dir_name = dir_name.to_string_lossy();
-        
+
         if let Some((name, version)) = split_crate_version(&dir_name) {
             let entry_v = version.to_string();
             let entry_p = entry.path();
-            
+
             if let Some((best_v, _)) = map.get(name) {
                 if crate::utils::is_version_better(&entry_v, Some(best_v)) {
                     map.insert(name.to_string(), (entry_v, entry_p));
@@ -390,8 +429,6 @@ fn scan_existing_dirs(output_dir: &Path) -> HashMap<String, (String, PathBuf)> {
 fn split_crate_version(dir_name: &str) -> Option<(&str, &str)> {
     dir_name.rsplit_once('@')
 }
-
-
 
 pub fn print_status_table(statuses: &[CrateStatus]) {
     print!("{}", format_status_table(statuses));
@@ -419,29 +456,38 @@ fn format_status_table(statuses: &[CrateStatus]) -> String {
     const COL_LOCK: usize = 16;
     const COL_DOCS: usize = 16;
     const COL_STATUS: usize = 14;
+    const COL_MODE: usize = 12;
+    const COL_SOURCE: usize = 16;
+    const COL_REASON_CODE: usize = 18;
+    const COL_FALLBACK: usize = 10;
 
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$}",
-        "Crate", "Lock Version", "Docs Version", "Status"
+        "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$} {:<COL_MODE$} {:<COL_SOURCE$} {:<COL_REASON_CODE$} {:<COL_FALLBACK$}",
+        "Crate", "Lock Version", "Docs Version", "Status", "Mode", "Source", "Reason Code", "Fallback"
     );
     let _ = writeln!(
         output,
-        "{:-<COL_CRATE$} {:-<COL_LOCK$} {:-<COL_DOCS$} {:-<COL_STATUS$}",
-        "", "", "", ""
+        "{:-<COL_CRATE$} {:-<COL_LOCK$} {:-<COL_DOCS$} {:-<COL_STATUS$} {:-<COL_MODE$} {:-<COL_SOURCE$} {:-<COL_REASON_CODE$} {:-<COL_FALLBACK$}",
+        "", "", "", "", "", "", "", ""
     );
 
     for item in statuses {
         let lock = item.lock_version.as_deref().unwrap_or("-");
         let docs = item.docs_version.as_deref().unwrap_or("-");
+        let source = item.source_kind.as_deref().unwrap_or("-");
         let _ = writeln!(
             output,
-            "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$}",
+            "{:<COL_CRATE$} {:<COL_LOCK$} {:<COL_DOCS$} {:<COL_STATUS$} {:<COL_MODE$} {:<COL_SOURCE$} {:<COL_REASON_CODE$} {:<COL_FALLBACK$}",
             item.crate_name,
             lock,
             docs,
             item.status.as_str(),
+            item.mode,
+            source,
+            item.reason_code,
+            if item.is_fallback { "yes" } else { "no" },
         );
         let _ = writeln!(output, "  ↳ {}", item.reason);
     }
@@ -530,6 +576,10 @@ mod tests {
         assert!(table.contains("Lock Version"));
         assert!(table.contains("Docs Version"));
         assert!(table.contains("Status"));
+        assert!(table.contains("Mode"));
+        assert!(table.contains("Source"));
+        assert!(table.contains("Reason Code"));
+        assert!(table.contains("Fallback"));
         assert!(table.contains("Total: 0 | Synced: 0 | Missing: 0 | Outdated: 0 | Corrupted: 0"));
         assert!(!table.contains("Hint: run `cargo ai-fdocs sync`"));
     }
@@ -545,6 +595,7 @@ mod tests {
             reason_code: "lockfile_ok".to_string(),
             mode: StatusMode::Lockfile.as_str().to_string(),
             source_kind: Some("github".to_string()),
+            is_fallback: false,
         }];
 
         let json = format_status_json(&statuses).expect("json serialization");
@@ -569,6 +620,7 @@ mod tests {
             reason_code: "lockfile_missing_crate".to_string(),
             mode: StatusMode::Lockfile.as_str().to_string(),
             source_kind: None,
+            is_fallback: false,
         }];
 
         let table = format_status_table(&statuses);
@@ -581,8 +633,8 @@ mod tests {
         assert!(table.contains("Problem details:"));
     }
 
-    #[test]
-    fn collect_status_latest_marks_github_fallback_as_synced_fallback() {
+    #[tokio::test]
+    async fn collect_status_latest_marks_github_fallback_as_synced_fallback() {
         let tmp = std::env::temp_dir().join(format!("aifd-status-latest-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("serde@1.0.0")).expect("create crate dir");
@@ -609,10 +661,11 @@ mod tests {
             crates,
         };
 
-        let statuses = collect_status_latest(&config, tmp.as_path());
+        let statuses = collect_status_latest(&config, tmp.as_path(), None).await;
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses[0].status, DocsStatus::SyncedFallback);
-        assert_eq!(statuses[0].reason_code, "latest_ok_fallback");
+        assert_eq!(statuses[0].reason_code, "fallback_used");
+        assert!(statuses[0].is_fallback);
         assert_eq!(statuses[0].mode, "latest_docs");
         assert_eq!(statuses[0].source_kind.as_deref(), Some("github_fallback"));
 

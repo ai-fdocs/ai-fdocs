@@ -8,6 +8,7 @@ import {
     parseJsonOutput,
 } from './command-types';
 import { SourceKind } from '../sources/source-types';
+import { serializeReport } from './reporting';
 
 interface CheckSummary {
     total: number;
@@ -79,6 +80,6 @@ export async function runCheckCommand(context: CommandContext): Promise<CommandR
         message: hasFailures ? 'Documentation check failed.' : 'Documentation check passed.',
         metrics,
         data: output,
-        rawOutput: stdout,
+        rawOutput: serializeReport(output),
     };
 }
