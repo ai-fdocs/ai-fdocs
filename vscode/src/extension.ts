@@ -1,14 +1,9 @@
 import * as vscode from 'vscode';
 import { BinaryManager } from './binary-manager';
 import { ProjectDetector, ProjectInfo } from './project-detector';
-import { DependencyTreeProvider, TreeItemType } from './dependency-tree-provider';
-import { syncAll } from './commands';
+import { DependencyTreeProvider } from './dependency-tree-provider';
+import { runUnifiedCommand } from './commands';
 import { CommandContext } from './core/command-types';
-import { runInitCommand } from './core/init-service';
-import { runSyncCommand } from './core/sync-service';
-import { runStatusCommand } from './core/status-service';
-import { runCheckCommand } from './core/check-service';
-import { runPruneCommand } from './core/prune-service';
 import { DocsSource, SyncMode } from './sources/source-types';
 
 let outputChannel: vscode.OutputChannel;
@@ -80,15 +75,6 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine(
         `Detected ${ProjectDetector.getProjectTypeName(currentProject.type)} project at ${currentProject.rootPath}`
     );
-
-    try {
-        const settings = await resolveSettings(currentProject.rootPath);
-        outputChannel.appendLine(`Loaded settings: ${JSON.stringify(settings)}`);
-    } catch (error: any) {
-        outputChannel.appendLine(`Configuration error: ${error.message}`);
-        vscode.window.showErrorMessage(`ai-fdocs config is invalid: ${error.message}`);
-    }
-
     // Initialize tree data provider
     treeDataProvider = new DependencyTreeProvider(binaryManager, outputChannel);
     treeDataProvider.setProjectRoot(currentProject.rootPath);
@@ -103,110 +89,32 @@ export async function activate(context: vscode.ExtensionContext) {
     await treeDataProvider.refresh();
 
     // Register commands
-    context.subscriptions.push(
-        vscode.commands.registerCommand('ai-fdocs.sync', async () => {
-            await syncAll(binaryManager, outputChannel, false);
-            await treeDataProvider.refresh();
-            updateStatusBar();
-        })
-    );
+    const registerUnifiedCommand = (
+        commandId: string,
+        commandName: 'init' | 'sync' | 'syncForce' | 'status' | 'check' | 'prune'
+    ) => {
+        context.subscriptions.push(
+            vscode.commands.registerCommand(commandId, async () => {
+                await runUnifiedCommand(commandName, outputChannel, createCommandContext, async () => {
+                    await treeDataProvider.refresh();
+                    updateStatusBar();
+                    outputChannel.show(true);
+                });
+            })
+        );
+    };
 
-    context.subscriptions.push(
-        vscode.commands.registerCommand('ai-fdocs.forceSync', async () => {
-            await syncAll(binaryManager, outputChannel, true);
-            await treeDataProvider.refresh();
-            updateStatusBar();
-        })
-    );
+    registerUnifiedCommand('ai-fdocs.init', 'init');
+    registerUnifiedCommand('ai-fdocs.sync', 'sync');
+    registerUnifiedCommand('ai-fdocs.syncForce', 'syncForce');
+    registerUnifiedCommand('ai-fdocs.status', 'status');
+    registerUnifiedCommand('ai-fdocs.check', 'check');
+    registerUnifiedCommand('ai-fdocs.prune', 'prune');
 
     context.subscriptions.push(
         vscode.commands.registerCommand('ai-fdocs.refresh', async () => {
             await treeDataProvider.refresh();
             updateStatusBar();
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('ai-fdocs.init', async () => {
-            await vscode.window.withProgress(
-                {
-                    location: vscode.ProgressLocation.Notification,
-                    title: 'AI-Docs: Initializing configuration...',
-                    cancellable: false,
-                },
-                async () => {
-                    try {
-                        const context = createCommandContext(new vscode.CancellationTokenSource().token);
-                        await runInitCommand(context);
-                        vscode.window.showInformationMessage('ai-fdocs.toml created successfully!');
-                        await treeDataProvider.refresh();
-                    } catch (error: any) {
-                        vscode.window.showErrorMessage(`Init failed: ${error.message}`);
-                    }
-                }
-            );
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('ai-fdocs.prune', async () => {
-            const confirm = await vscode.window.showWarningMessage(
-                'This will remove outdated documentation. Continue?',
-                'Yes',
-                'No'
-            );
-
-            if (confirm !== 'Yes') {
-                return;
-            }
-
-            await vscode.window.withProgress(
-                {
-                    location: vscode.ProgressLocation.Notification,
-                    title: 'AI-Docs: Pruning documentation...',
-                    cancellable: false,
-                },
-                async () => {
-                    try {
-                        const context = createCommandContext(new vscode.CancellationTokenSource().token);
-                        await runPruneCommand(context);
-                        vscode.window.showInformationMessage('Documentation pruned successfully!');
-                        await treeDataProvider.refresh();
-                    } catch (error: any) {
-                        vscode.window.showErrorMessage(`Prune failed: ${error.message}`);
-                    }
-                }
-            );
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('ai-fdocs.check', async () => {
-            try {
-                const commandContext = createCommandContext(new vscode.CancellationTokenSource().token);
-                const result = await runCheckCommand(commandContext);
-
-                outputChannel.appendLine('=== Check Output ===');
-                outputChannel.appendLine(result.rawOutput ?? '');
-                outputChannel.show();
-
-                const summary = result.data?.summary;
-
-                if (!summary) {
-                    vscode.window.showWarningMessage('Check completed, but summary is unavailable.');
-                    return;
-                }
-
-                if (summary.missing > 0 || summary.outdated > 0 || summary.corrupted > 0) {
-                    vscode.window.showWarningMessage(
-                        `Documentation check: ${summary.missing} missing, ${summary.outdated} outdated, ${summary.corrupted} corrupted`
-                    );
-                } else {
-                    vscode.window.showInformationMessage('All documentation is up to date!');
-                }
-            } catch (error: any) {
-                vscode.window.showErrorMessage(`Check failed: ${error.message}`);
-            }
         })
     );
 
@@ -224,10 +132,10 @@ export async function activate(context: vscode.ExtensionContext) {
     if (autoSync) {
         projectDetector.setupWatchers(async () => {
             outputChannel.appendLine('Lockfile or config changed, auto-syncing...');
-            const commandContext = createCommandContext(new vscode.CancellationTokenSource().token);
-            await runSyncCommand(commandContext, { force: false });
-            await treeDataProvider.refresh();
-            updateStatusBar();
+            await runUnifiedCommand('sync', outputChannel, createCommandContext, async () => {
+                await treeDataProvider.refresh();
+                updateStatusBar();
+            });
         });
     }
 
