@@ -34,7 +34,7 @@ cargo install cargo-ai-fdocs
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/your-org/cargo-ai-fdocs.git
+git clone https://github.com/ai-fdocs/cargo-ai-fdocs.git
 cd cargo-ai-fdocs/vscode
 ```
 
@@ -52,9 +52,12 @@ npm run compile
 
 1. Press `F5` in VS Code to launch Extension Development Host
 
-### From VSIX (Coming Soon)
+### From VSIX (Local Build)
+
+The extension is currently distributed as a locally built VSIX package.
 
 ```bash
+npm run package
 code --install-extension ai-fdocs-0.1.0.vsix
 ```
 
@@ -205,7 +208,7 @@ MIT - See [LICENSE](../LICENSE) for details.
 
 ## Links
 
-- [Main Repository](https://github.com/your-org/cargo-ai-fdocs)
+- [Main Repository](https://github.com/ai-fdocs/cargo-ai-fdocs)
 - [NPM Package](https://www.npmjs.com/package/ai-fdocs)
 - [Cargo Crate](https://crates.io/crates/cargo-ai-fdocs)
-- [Documentation](https://github.com/your-org/cargo-ai-fdocs/blob/main/README.md)
+- [Documentation](https://github.com/ai-fdocs/cargo-ai-fdocs/blob/main/README.md)

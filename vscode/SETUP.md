@@ -82,6 +82,16 @@ This creates `ai-fdocs-0.1.0.vsix` which can be installed via:
 code --install-extension ai-fdocs-0.1.0.vsix
 ```
 
+## Pre-publish docs sanity checklist
+
+Before packaging or publishing the extension, verify docs and metadata are aligned:
+
+- [ ] `README.md` has correct repository links (`ai-fdocs/cargo-ai-fdocs`) in clone/docs sections.
+- [ ] `README.md` installation sections match the current release flow (local VSIX build + install).
+- [ ] `package.json` fields `publisher`, `repository`, and `homepage` match `README.md`.
+- [ ] VSIX filename in docs matches current extension version from `package.json` (e.g. `ai-fdocs-0.1.0.vsix`).
+- [ ] `npm run package` completes successfully and generated VSIX installs via `code --install-extension`.
+
 ## Troubleshooting
 
 ### TypeScript Errors
