@@ -259,7 +259,8 @@
         "pretest": "npm run compile",
         "test": "node ./dist/test/runTest.js",
         "lint": "eslint src --ext ts",
-        "package": "vsce package"
+        "package": "vsce package",
+        "test:unit": "npm run compile && node --test dist/test/**/*.test.js"
     },
     "devDependencies": {
         "@types/node": "^20.12.0",

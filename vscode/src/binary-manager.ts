@@ -1,13 +1,12 @@
 import * as vscode from 'vscode';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
-import * as path from 'path';
-import * as fs from 'fs';
+import { BinaryCommand, cargoSubcommandCommand, commandFromBinaryPath, composeArgs, formatCommandForLog } from './binary-command';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface BinaryInfo {
-    path: string;
+    command: BinaryCommand;
     version: string;
     type: 'npm' | 'rust';
 }
@@ -64,8 +63,10 @@ export class BinaryManager {
      * Check if a binary path is valid and get its version
      */
     private async checkBinaryPath(binaryPath: string): Promise<BinaryInfo | null> {
+        const command: BinaryCommand = commandFromBinaryPath(binaryPath);
+
         try {
-            const { stdout } = await execAsync(`"${binaryPath}" --version`, {
+            const { stdout } = await execFileAsync(command.executable, composeArgs(command, ['--version']), {
                 timeout: 5000,
             });
 
@@ -75,7 +76,7 @@ export class BinaryManager {
             this.outputChannel.appendLine(`Found binary: ${binaryPath} (${type}) v${version}`);
 
             return {
-                path: binaryPath,
+                command,
                 version,
                 type,
             };
@@ -89,8 +90,10 @@ export class BinaryManager {
      * Check for cargo ai-fdocs subcommand
      */
     private async checkCargoSubcommand(): Promise<BinaryInfo | null> {
+        const command: BinaryCommand = cargoSubcommandCommand();
+
         try {
-            const { stdout } = await execAsync('cargo ai-fdocs --version', {
+            const { stdout } = await execFileAsync(command.executable, composeArgs(command, ['--version']), {
                 timeout: 5000,
             });
 
@@ -99,7 +102,7 @@ export class BinaryManager {
             this.outputChannel.appendLine(`Found cargo subcommand: cargo ai-fdocs v${version}`);
 
             return {
-                path: 'cargo ai-fdocs',
+                command,
                 version,
                 type: 'rust',
             };
@@ -124,11 +127,12 @@ export class BinaryManager {
             throw new Error('Binary not detected. Please install ai-fdocs or configure binary path.');
         }
 
-        const command = `"${this.binaryInfo.path}" ${args.join(' ')}`;
-        this.outputChannel.appendLine(`Executing: ${command}`);
+        const command = this.binaryInfo.command;
+        const fullArgs = composeArgs(command, args);
+        this.outputChannel.appendLine(`Executing: ${formatCommandForLog(command, args)}`);
 
         try {
-            const result = await execAsync(command, {
+            const result = await execFileAsync(command.executable, fullArgs, {
                 cwd: cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
                 timeout: 120000, // 2 minutes timeout
                 maxBuffer: 10 * 1024 * 1024, // 10MB buffer
