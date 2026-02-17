@@ -23,6 +23,23 @@ export interface StatusOutput {
     statuses: DependencyStatus[];
 }
 
+export type DocsSource = 'github' | 'npm_tarball';
+export type SyncMode = 'lockfile' | 'latest-docs';
+export type ReportFormat = 'text' | 'json';
+export type TableFormat = 'table' | 'json';
+
+export interface AiFdocsSettings {
+    output_dir: string;
+    max_file_size_kb: number;
+    sync_concurrency: number;
+    prune: boolean;
+    docs_source: DocsSource;
+    sync_mode: SyncMode;
+    latest_ttl_hours: number;
+    report_format: ReportFormat;
+    format: TableFormat;
+}
+
 export function parseStatusOutput(jsonOutput: string): StatusOutput {
     try {
         const parsed = JSON.parse(jsonOutput);
