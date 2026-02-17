@@ -1,12 +1,24 @@
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import chalk from "chalk";
-import { loadConfig } from "../config.js";
+import { loadConfig, type DocsSource } from "../config.js";
 import { resolveVersions } from "../resolver.js";
 import { computeConfigHash } from "../config-hash.js";
 import { isCachedV2 } from "../storage.js";
 import { AiDocsError } from "../error.js";
 import { NpmRegistryClient } from "../registry.js";
+
+function resolveDocsSource(docsSourceOverride: string | undefined, defaultDocsSource: DocsSource): DocsSource {
+  if (!docsSourceOverride) {
+    return defaultDocsSource;
+  }
+
+  if (docsSourceOverride === "github" || docsSourceOverride === "npm_tarball") {
+    return docsSourceOverride;
+  }
+
+  throw new AiDocsError("Unsupported --docs-source value. Use github or npm_tarball.", "INVALID_CONFIG");
+}
 
 interface CheckIssue {
   name: string;
@@ -20,9 +32,14 @@ export interface CheckReport {
 
 export type CheckFormat = "text" | "json";
 
-export async function buildCheckReport(projectRoot: string, modeOverride?: string): Promise<CheckReport> {
+export async function buildCheckReport(
+  projectRoot: string,
+  modeOverride?: string,
+  docsSourceOverride?: string
+): Promise<CheckReport> {
   const config = loadConfig(projectRoot);
   const syncMode = modeOverride || config.settings.sync_mode;
+  resolveDocsSource(docsSourceOverride, config.settings.docs_source);
   const outputDir = join(projectRoot, config.settings.output_dir);
 
   const registry = new NpmRegistryClient();
@@ -109,12 +126,17 @@ export function renderJsonReport(report: CheckReport): string {
   return JSON.stringify(report, null, 2);
 }
 
-export async function cmdCheck(projectRoot: string, format: string = "text", modeOverride?: string): Promise<void> {
+export async function cmdCheck(
+  projectRoot: string,
+  format: string = "text",
+  modeOverride?: string,
+  docsSourceOverride?: string
+): Promise<void> {
   if (format !== "text" && format !== "json") {
     throw new AiDocsError(`Unsupported --format value: ${format}`, "INVALID_FORMAT");
   }
 
-  const report = await buildCheckReport(projectRoot, modeOverride);
+  const report = await buildCheckReport(projectRoot, modeOverride, docsSourceOverride);
 
   if (format === "json") {
     console.log(renderJsonReport(report));
