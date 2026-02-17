@@ -30,34 +30,6 @@
     "contributes": {
         "commands": [
             {
-                "command": "ai-fdocs.sync",
-                "title": "AI-Docs: Sync All",
-                "icon": "$(sync)"
-            },
-            {
-                "command": "ai-fdocs.forceSync",
-                "title": "AI-Docs: Force Sync",
-                "icon": "$(sync-ignored)"
-            },
-            {
-                "command": "ai-fdocs.syncPackage",
-                "title": "AI-Docs: Sync Package"
-            },
-            {
-                "command": "ai-fdocs.init",
-                "title": "AI-Docs: Initialize",
-                "icon": "$(file-add)"
-            },
-            {
-                "command": "ai-fdocs.prune",
-                "title": "AI-Docs: Prune",
-                "icon": "$(trash)"
-            },
-            {
-                "command": "ai-fdocs.check",
-                "title": "AI-Docs: Check Status"
-            },
-            {
                 "command": "ai-fdocs.openDocs",
                 "title": "AI-Docs: Open Documentation"
             },
@@ -65,6 +37,36 @@
                 "command": "ai-fdocs.refresh",
                 "title": "AI-Docs: Refresh",
                 "icon": "$(refresh)"
+            },
+            {
+                "command": "ai-fdocs.sync",
+                "title": "AI-Docs: Sync",
+                "icon": "$(sync)"
+            },
+            {
+                "command": "ai-fdocs.syncForce",
+                "title": "AI-Docs: Force Sync",
+                "icon": "$(sync-ignored)"
+            },
+            {
+                "command": "ai-fdocs.status",
+                "title": "AI-Docs: Status",
+                "icon": "$(pulse)"
+            },
+            {
+                "command": "ai-fdocs.check",
+                "title": "AI-Docs: Check",
+                "icon": "$(check)"
+            },
+            {
+                "command": "ai-fdocs.prune",
+                "title": "AI-Docs: Prune",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "ai-fdocs.init",
+                "title": "AI-Docs: Init",
+                "icon": "$(file-add)"
             }
         ],
         "viewsContainers": {
@@ -92,22 +94,37 @@
                     "group": "navigation@1"
                 },
                 {
-                    "command": "ai-fdocs.refresh",
+                    "command": "ai-fdocs.syncForce",
                     "when": "view == ai-fdocs-dependencies",
                     "group": "navigation@2"
                 },
                 {
-                    "command": "ai-fdocs.init",
+                    "command": "ai-fdocs.status",
                     "when": "view == ai-fdocs-dependencies",
                     "group": "navigation@3"
+                },
+                {
+                    "command": "ai-fdocs.check",
+                    "when": "view == ai-fdocs-dependencies",
+                    "group": "navigation@4"
+                },
+                {
+                    "command": "ai-fdocs.prune",
+                    "when": "view == ai-fdocs-dependencies",
+                    "group": "navigation@5"
+                },
+                {
+                    "command": "ai-fdocs.init",
+                    "when": "view == ai-fdocs-dependencies",
+                    "group": "navigation@6"
+                },
+                {
+                    "command": "ai-fdocs.refresh",
+                    "when": "view == ai-fdocs-dependencies",
+                    "group": "navigation@7"
                 }
             ],
             "view/item/context": [
-                {
-                    "command": "ai-fdocs.syncPackage",
-                    "when": "view == ai-fdocs-dependencies && viewItem == package",
-                    "group": "inline"
-                },
                 {
                     "command": "ai-fdocs.openDocs",
                     "when": "view == ai-fdocs-dependencies && viewItem == package"
