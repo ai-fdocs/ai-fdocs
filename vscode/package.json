@@ -158,5 +158,10 @@
         "eslint": "^8.57.0",
         "typescript": "^5.4.0",
         "@vscode/vsce": "^2.24.0"
-    }
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ai-fdocs/cargo-ai-fdocs.git"
+    },
+    "homepage": "https://github.com/ai-fdocs/cargo-ai-fdocs/blob/main/vscode/README.md"
 }
