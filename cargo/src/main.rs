@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 
-use chrono::{NaiveDate, Utc};
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{error, info, warn};
 
@@ -26,6 +25,7 @@ use crate::fetcher::github::{FetchedFile, FileRequest, GitHubFetcher};
 use crate::fetcher::latest::{is_docsrs_fallback_eligible, LatestDocsFetcher};
 use crate::init::run_init as run_init_command;
 use crate::status::{collect_status, collect_status_latest, print_status_table, DocsStatus};
+use crate::utils::is_latest_cache_fresh;
 
 const DEFAULT_CONFIG_PATH: &str = "ai-fdocs.toml";
 
@@ -226,7 +226,7 @@ async fn run_sync(
             let rust_versions = rust_versions.clone();
             let fetcher = Arc::clone(&fetcher);
             let force = force;
-            let max_file_size_kb = max_file_size_kb;
+            let max_file_size_kb = config.settings.max_file_size_kb;
             async move {
                 sync_one_crate(
                     rust_output_dir,
@@ -384,6 +384,7 @@ async fn sync_one_crate_latest(
             &artifact.markdown,
             &artifact.docsrs_input_url,
             artifact.truncated,
+            max_file_size_kb,
             &crate_doc,
         ) {
             Ok(saved) => SyncOutcome::Synced(saved),
@@ -547,6 +548,7 @@ async fn sync_one_crate_hybrid(
                 &art.markdown,
                 &art.docsrs_input_url,
                 art.truncated,
+                max_file_size_kb,
                 &crate_doc,
             ) {
                 Ok(saved) => return SyncOutcome::Synced(saved),
@@ -624,78 +626,9 @@ fn is_readme_request(path: &str) -> bool {
     path.eq_ignore_ascii_case("README.md")
 }
 
-// Helper to identify likely README requests
-fn is_readme_request(path: &str) -> bool {
-    path.eq_ignore_ascii_case("README.md")
-}
-
-async fn sync_one_crate_from_github(
-    rust_output_dir: PathBuf,
-    fetcher: Arc<GitHubFetcher>,
-    crate_name: String,
-    crate_doc: crate::config::CrateDoc,
-    version: String,
-    max_file_size_kb: usize,
-    source_kind_override: Option<&'static str>,
-) -> SyncOutcome {
-    let Some(repo) = crate_doc.github_repo().map(str::to_string) else {
-        warn!("Crate '{crate_name}' has no GitHub repo in config");
-        if source_kind_override.is_some() {
-            return SyncOutcome::Error(SyncErrorKind::Other);
-        }
-        return SyncOutcome::Skipped;
-    };
-
-    let resolved = match fetcher
-        .resolve_ref(&repo, &crate_name, version.as_str())
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            warn!("  ✗ failed to resolve ref for {crate_name}@{version}: {e}");
-            return SyncOutcome::Error(e.sync_kind());
-        }
-    };
-
-    let requests = build_requests(crate_doc.subpath.as_deref(), crate_doc.effective_files());
-    let results = fetcher
-        .fetch_files(&repo, &resolved.git_ref, &requests)
-        .await;
-
-    let fetched_files = collect_fetched_files(results, &crate_name, &version);
-    if fetched_files.files.is_empty() {
-        warn!("  ✗ no files fetched for {crate_name}@{version}");
-        return SyncOutcome::Error(SyncErrorKind::NotFound);
-    }
-
-    let source_kind = source_kind_override.unwrap_or("github");
-    let save_ctx = storage::SaveContext {
-        repo: &repo,
-        resolved: &resolved,
-        max_file_size_kb,
-        source_kind,
-        artifact_path: None,
-        docsrs_input_url: None,
-        upstream_latest_version: Some(&version),
-        truncated: None,
-    };
-
-    let save_req = storage::SaveRequest {
-        crate_name: &crate_name,
-        version: &version,
-        fetched_files: &fetched_files.files,
-        crate_config: &crate_doc,
-    };
-
-    match storage::save_crate_files(&rust_output_dir, &save_ctx, save_req) {
-        Ok(saved) => SyncOutcome::Synced(saved),
-        Err(e) => SyncOutcome::Error(e.sync_kind()),
-    }
-}
-
 struct FetchCollection {
     files: Vec<FetchedFile>,
-    _non_optional_errors: usize,
+    non_optional_errors: usize,
 }
 
 fn collect_fetched_files(
@@ -721,7 +654,7 @@ fn collect_fetched_files(
 
     FetchCollection {
         files,
-        _non_optional_errors: non_optional_errors,
+        non_optional_errors,
     }
 }
 
@@ -871,7 +804,7 @@ async fn run_status(
             collect_status(&config, &rust_versions, &rust_dir).await
         }
         SyncMode::LatestDocs => {
-            let fetcher = LatestDocsFetcher::new(reqwest::Client::new());
+            let fetcher = LatestDocsFetcher::new();
             collect_status_latest(&config, &rust_dir, Some(&fetcher)).await
         }
     };
@@ -897,7 +830,7 @@ async fn run_check(
             collect_status(&config, &rust_versions, &rust_dir).await
         }
         SyncMode::LatestDocs => {
-            let fetcher = LatestDocsFetcher::new(reqwest::Client::new());
+            let fetcher = LatestDocsFetcher::new();
             collect_status_latest(&config, &rust_dir, Some(&fetcher)).await
         }
     };
@@ -925,7 +858,7 @@ async fn run_check(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_requests, collect_fetched_files, is_latest_cache_fresh, resolve_sync_mode,
+        build_requests, collect_fetched_files, resolve_sync_mode,
         should_emit_plain_check_errors, OutputFormat, SyncMode, SyncModeArg,
     };
     use crate::error::AiDocsError;

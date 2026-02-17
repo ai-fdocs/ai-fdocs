@@ -271,6 +271,7 @@ impl Config {
             ));
         }
 
+        let require_github_repo = !matches!(self.settings.sync_mode, SyncMode::LatestDocs);
         if require_github_repo {
             for (crate_name, crate_cfg) in &self.crates {
                 if crate_cfg.github_repo().is_none() {
