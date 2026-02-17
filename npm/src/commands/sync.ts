@@ -12,7 +12,7 @@ import { NpmRegistryClient } from "../registry.js";
 import { AiDocsError } from "../error.js";
 import { generateConsolidatedDoc } from "../consolidation.js";
 
-type SyncSource = "github" | "npm_tarball" | "hybrid";
+type SyncSource = "github" | "npm_tarball" | "npm_readme_metadata" | "hybrid";
 
 interface SyncTaskResult {
   saved: SavedPackage | null;
@@ -46,6 +46,7 @@ export function summarizeSourceStats(results: SyncTaskResult[]): Record<SyncSour
   const stats: Record<SyncSource, SourceStat> = {
     github: { synced: 0, errors: 0, skipped: 0, cached: 0 },
     npm_tarball: { synced: 0, errors: 0, skipped: 0, cached: 0 },
+    npm_readme_metadata: { synced: 0, errors: 0, skipped: 0, cached: 0 },
     hybrid: { synced: 0, errors: 0, skipped: 0, cached: 0 },
   };
 
@@ -120,20 +121,26 @@ function printSyncSummary(report: SyncReport): void {
   );
 }
 
+type NpmFetchResult =
+  | { files: FetchedFile[]; source: "npm_tarball" | "npm_readme_metadata" }
+  | { error: { message: string; code?: string } };
+
 async function tryFetchFromNpm(
   npmRegistry: NpmRegistryClient,
   name: string,
   version: string,
   subpath?: string,
-  files?: string[]
-): Promise<{ files: FetchedFile[] } | { error: { message: string; code?: string } }> {
+  files?: string[],
+  options?: { preferReadmeMetadata?: boolean }
+): Promise<NpmFetchResult> {
   try {
+    const preferReadmeMetadata = options?.preferReadmeMetadata ?? true;
     // Fast path: try to get README from registry metadata if no explicit files or only README is requested
     const isReadmeOnly = !files || (files.length === 1 && files[0].toLowerCase() === "readme.md");
-    if (isReadmeOnly && !subpath) {
+    if (preferReadmeMetadata && isReadmeOnly && !subpath) {
       const readme = await npmRegistry.getReadme(name, version);
       if (readme) {
-        return { files: [{ path: "README.md", content: readme }] };
+        return { files: [{ path: "README.md", content: readme }], source: "npm_readme_metadata" };
       }
     }
 
@@ -148,7 +155,7 @@ async function tryFetchFromNpm(
     }
 
     const fetched = await fetchDocsFromNpmTarball(tarballUrl, subpath, files);
-    return { files: fetched };
+    return { files: fetched, source: "npm_tarball" };
   } catch (e) {
     const err = toErrorInfo(e);
     return { error: { message: err.message, code: err.code } };
@@ -262,7 +269,7 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
             taskSource = "github";
           } else {
             fetchedFiles = [...metaFiles, ...npmDocs.files];
-            taskSource = "npm_tarball";
+            taskSource = npmDocs.source;
           }
         } catch (e) {
           const err = toErrorInfo(e);
@@ -286,6 +293,7 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
           };
         }
         fetchedFiles = npmDocs.files;
+        taskSource = npmDocs.source;
       } else {
         // Source is GitHub
         const repo = pkgConfig.repo;
@@ -311,7 +319,9 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
         } catch (e) {
           const primaryErr = toErrorInfo(e);
           // Try npm fallback
-          const npmFallback = await tryFetchFromNpm(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files);
+          const npmFallback = await tryFetchFromNpm(npmRegistry, name, version, pkgConfig.subpath, pkgConfig.files, {
+            preferReadmeMetadata: false,
+          });
           if ("error" in npmFallback) {
             return {
               saved: null,
@@ -321,7 +331,7 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
               errorCode: primaryErr.code || npmFallback.error.code,
             };
           }
-          taskSource = "npm_tarball";
+          taskSource = npmFallback.source;
           fetchedFiles = npmFallback.files;
           resolved = { gitRef: "npm-tarball", isFallback: true };
         }
