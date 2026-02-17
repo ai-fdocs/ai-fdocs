@@ -1,10 +1,23 @@
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import chalk from "chalk";
-import { loadConfig, type SyncMode } from "../config.js";
+import { loadConfig, type DocsSource, type SyncMode } from "../config.js";
 import { resolveVersions } from "../resolver.js";
 import { computeConfigHash } from "../config-hash.js";
 import { NpmRegistryClient } from "../registry.js";
+import { AiDocsError } from "../error.js";
+
+function resolveDocsSource(docsSourceOverride: string | undefined, defaultDocsSource: DocsSource): DocsSource {
+  if (!docsSourceOverride) {
+    return defaultDocsSource;
+  }
+
+  if (docsSourceOverride === "github" || docsSourceOverride === "npm_tarball") {
+    return docsSourceOverride;
+  }
+
+  throw new AiDocsError("Unsupported --docs-source value. Use github or npm_tarball.", "INVALID_CONFIG");
+}
 
 export type DocsStatus = "Synced" | "SyncedFallback" | "Outdated" | "Missing" | "Incomplete" | "ReadError";
 
@@ -29,10 +42,12 @@ export interface StatusReport {
 export async function cmdStatus(
   projectRoot: string,
   format: string = "text",
-  modeOverride?: string
+  modeOverride?: string,
+  docsSourceOverride?: string
 ): Promise<void> {
   const config = loadConfig(projectRoot);
   const syncMode = (modeOverride as SyncMode) || config.settings.sync_mode;
+  resolveDocsSource(docsSourceOverride, config.settings.docs_source);
   const outputDir = join(projectRoot, config.settings.output_dir);
 
   let targetVersions: Map<string, string>;

@@ -28,6 +28,7 @@ program
   .description("Sync documentation for dependencies")
   .option("--force", "Force re-download of all documentation")
   .option("--mode <mode>", "Sync mode: lockfile | latest_docs | hybrid", "lockfile")
+  .option("--docs-source <source>", "Docs source override: github | npm_tarball")
   .option("--report-format <format>", "Output format for the sync report: text | json", "text")
   .action(async (options) => {
     try {
@@ -43,10 +44,11 @@ program
   .description("Show current documentation status")
   .option("--format <format>", "Output format: text | json", "text")
   .option("--mode <mode>", "Sync mode override: lockfile | latest_docs | hybrid")
+  .option("--docs-source <source>", "Docs source override: github | npm_tarball")
   .action(async (options) => {
     try {
       const { cmdStatus } = await import("./commands/status.js");
-      await cmdStatus(process.cwd(), options.format, options.mode);
+      await cmdStatus(process.cwd(), options.format, options.mode, options.docsSource);
     } catch (e) {
       handleError(e);
     }
@@ -57,10 +59,11 @@ program
   .description("Check if documentation is up to date (exit code 1 if not)")
   .option("--format <format>", "Output format: text | json", "text")
   .option("--mode <mode>", "Sync mode override: lockfile | latest_docs | hybrid")
+  .option("--docs-source <source>", "Docs source override: github | npm_tarball")
   .action(async (options) => {
     try {
       const { cmdCheck } = await import("./commands/check.js");
-      await cmdCheck(process.cwd(), options.format, options.mode);
+      await cmdCheck(process.cwd(), options.format, options.mode, options.docsSource);
     } catch (e) {
       handleError(e);
     }

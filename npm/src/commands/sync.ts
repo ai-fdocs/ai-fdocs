@@ -2,6 +2,7 @@ import { join } from "node:path";
 import chalk from "chalk";
 import pLimit from "p-limit";
 import { loadConfig } from "../config.js";
+import type { DocsSource } from "../config.js";
 import { resolveVersions } from "../resolver.js";
 import { GitHubClient, fetchDocsFromNpmTarball, type FetchedFile } from "../fetcher.js";
 import { computeConfigHash } from "../config-hash.js";
@@ -13,6 +14,18 @@ import { AiDocsError } from "../error.js";
 import { generateConsolidatedDoc } from "../consolidation.js";
 
 type SyncSource = "github" | "npm_tarball" | "npm_readme_metadata" | "hybrid";
+
+function resolveDocsSource(docsSourceOverride: string | undefined, defaultDocsSource: DocsSource): DocsSource {
+  if (!docsSourceOverride) {
+    return defaultDocsSource;
+  }
+
+  if (docsSourceOverride === "github" || docsSourceOverride === "npm_tarball") {
+    return docsSourceOverride;
+  }
+
+  throw new AiDocsError("Unsupported --docs-source value. Use github or npm_tarball.", "INVALID_CONFIG");
+}
 
 interface SyncTaskResult {
   saved: SavedPackage | null;
@@ -162,7 +175,10 @@ async function tryFetchFromNpm(
   }
 }
 
-export async function cmdSync(projectRoot: string, options: { force?: boolean; mode?: string; reportFormat?: string }): Promise<void> {
+export async function cmdSync(
+  projectRoot: string,
+  options: { force?: boolean; mode?: string; reportFormat?: string; docsSource?: string }
+): Promise<void> {
   const force = options.force || false;
   const reportFormat = options.reportFormat || "text";
 
@@ -205,7 +221,7 @@ export async function cmdSync(projectRoot: string, options: { force?: boolean; m
 
   const entries = Object.entries(config.packages);
   const limit = pLimit(config.settings.sync_concurrency);
-  const selectedSource: SyncSource = config.settings.docs_source;
+  const selectedSource: SyncSource = resolveDocsSource(options.docsSource, config.settings.docs_source);
 
   const tasks = entries.map(([name, pkgConfig]) =>
     limit(async (): Promise<SyncTaskResult> => {

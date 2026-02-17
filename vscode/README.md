@@ -145,6 +145,15 @@ Configure the extension via VS Code settings:
 | Report format | CLI flag (`--report-format`) | CLI flag (`--report-format`) | `ai-fdocs.reportFormat` |
 | Output format | CLI flag (`--format`) | CLI flag (`--format`) | `ai-fdocs.format` |
 
+### CLI flag parity (Rust / NPM)
+
+| Command | Flag | Rust CLI | NPM CLI | VS Code behavior |
+| --- | --- | --- | --- | --- |
+| `sync` | `--docs-source` | ✅ Supported | ✅ Supported | Passed through by engine argument normalizer |
+| `status` | `--docs-source` | ✅ Supported | ✅ Supported | Passed through by engine argument normalizer |
+| `check` | `--docs-source` | ✅ Supported | ✅ Supported | Passed through by engine argument normalizer |
+| `sync/status/check` | `--mode latest-docs` | ❌ (expects `latest_docs`) | ❌ (expects `latest_docs`) | Normalized to `latest_docs` automatically |
+
 ## Migration to `ai-fdocs.engine`
 
 ### What changed
