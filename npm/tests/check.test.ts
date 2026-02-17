@@ -37,10 +37,24 @@ describe("check report", () => {
 
     const report = await buildCheckReport(root);
 
-    expect(report.ok).toBe(false);
-    expect(report.issues).toEqual([{ name: "lodash", kind: "missing" }]);
+    expect(report.summary).toEqual({
+      total: 1,
+      synced: 0,
+      missing: 1,
+      outdated: 0,
+      corrupted: 0,
+    });
+    expect(report.statuses).toEqual([
+      {
+        package_name: "lodash",
+        lock_version: "4.17.21",
+        status: "Missing",
+        reason: "lodash: docs missing",
+        reason_code: "missing",
+      },
+    ]);
 
     const parsed = JSON.parse(renderJsonReport(report));
-    expect(parsed).toEqual({ ok: false, issues: [{ name: "lodash", kind: "missing" }] });
+    expect(parsed).toEqual(report);
   });
 });

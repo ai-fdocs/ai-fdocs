@@ -30,6 +30,23 @@ export interface StatusOutput {
     statuses: DependencyStatus[];
 }
 
+
+export interface CheckStatus {
+    package_name?: string;
+    crate_name?: string;
+    lock_version?: string;
+    docs_version?: string;
+    status: 'Synced' | 'SyncedFallback' | 'Outdated' | 'Missing' | 'Corrupted';
+    reason?: string;
+    reason_code?: string;
+    source_kind?: SourceKind;
+}
+
+export interface CheckOutput {
+    summary: StatusSummary;
+    statuses: CheckStatus[];
+}
+
 export type ReportFormat = 'text' | 'json';
 export type TableFormat = 'table' | 'json';
 
