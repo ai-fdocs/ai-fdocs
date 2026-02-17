@@ -15,7 +15,7 @@ export async function runInitCommand(
         args.push('--force');
     }
 
-    const { stdout } = await context.binaryManager.execute(args, context.workspaceRoot);
+    const { stdout } = await context.executor.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);
 
     context.logger.info('Init command completed.');

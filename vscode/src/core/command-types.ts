@@ -15,12 +15,30 @@ export interface CommandSettings {
     docsSource?: DocsSource;
 }
 
+export type EngineName = 'internal' | 'external-cli';
+
+export interface CommandExecutor {
+    engine: EngineName;
+    execute(args: string[], workspaceRoot: string): Promise<{ stdout: string; stderr: string }>;
+}
+
+export interface CommandDiagnostics {
+    emitFailure(command: 'sync' | 'check', details: {
+        engine: EngineName;
+        reason: 'validation' | 'exception';
+        message: string;
+        errorCount?: number;
+    }): void;
+}
+
 export interface CommandContext {
     workspaceRoot: string;
     settings: CommandSettings;
     logger: CommandLogger;
     cancellationToken: vscode.CancellationToken;
     binaryManager: BinaryManager;
+    executor: CommandExecutor;
+    diagnostics?: CommandDiagnostics;
 }
 
 export interface SourceMetrics {

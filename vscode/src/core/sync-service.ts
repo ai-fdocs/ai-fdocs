@@ -2,7 +2,6 @@ import {
     CommandContext,
     CommandResult,
     SourceMetrics,
-    createEmptyMetrics,
     ensureNotCancelled,
     normalizeSourceMetrics,
     parseJsonOutput,
@@ -34,7 +33,7 @@ export async function runSyncCommand(
         args.push('--docs-source', context.settings.docsSource);
     }
 
-    const { stdout } = await context.binaryManager.execute(args, context.workspaceRoot);
+    const { stdout } = await context.executor.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);
 
     const report = parseJsonOutput<SyncJsonReport>(stdout);

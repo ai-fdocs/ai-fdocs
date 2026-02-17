@@ -3,8 +3,10 @@ import { BinaryManager } from './binary-manager';
 import { ProjectDetector, ProjectInfo } from './project-detector';
 import { DependencyItem, DependencyTreeProvider } from './dependency-tree-provider';
 import { runUnifiedCommand } from './commands';
-import { CommandContext } from './core/command-types';
+import { CommandContext, CommandExecutor, EngineName } from './core/command-types';
 import { DocsSource, SyncMode } from './sources/source-types';
+import { createEngineExecutor, resolveEngine } from './engine';
+import { ExtensionDiagnostics } from './core/diagnostics';
 
 let outputChannel: vscode.OutputChannel;
 let binaryManager: BinaryManager;
@@ -12,6 +14,18 @@ let projectDetector: ProjectDetector;
 let treeDataProvider: DependencyTreeProvider;
 let statusBarItem: vscode.StatusBarItem;
 let currentProject: ProjectInfo | null = null;
+let commandExecutor: CommandExecutor;
+let diagnostics: ExtensionDiagnostics;
+let activeEngine: EngineName = 'external-cli';
+
+function getActiveEngine(context?: vscode.ExtensionContext): EngineName {
+    const config = vscode.workspace.getConfiguration('ai-fdocs');
+    if (context) {
+        return resolveEngine(config, context);
+    }
+    const configured = config.get<EngineName>('engine');
+    return configured ?? activeEngine;
+}
 
 function getActiveSyncMode(): SyncMode {
     const config = vscode.workspace.getConfiguration('ai-fdocs');
@@ -37,6 +51,8 @@ function createCommandContext(cancellationToken: vscode.CancellationToken): Comm
         },
         cancellationToken,
         binaryManager,
+        executor: commandExecutor,
+        diagnostics,
     };
 }
 
@@ -50,6 +66,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize binary manager
     binaryManager = new BinaryManager(outputChannel);
+    diagnostics = new ExtensionDiagnostics(outputChannel);
 
     // Check if binary is available
     const isAvailable = await binaryManager.isAvailable();
@@ -59,10 +76,14 @@ export async function activate(context: vscode.ExtensionContext) {
         return; // Don't activate further if binary not found
     }
 
+    activeEngine = getActiveEngine(context);
+    commandExecutor = createEngineExecutor(activeEngine, binaryManager);
+
     const binaryInfo = binaryManager.getBinaryInfo();
     outputChannel.appendLine(
         `Using ai-fdocs binary: ${binaryInfo?.path} (${binaryInfo?.type}) v${binaryInfo?.version}`
     );
+    outputChannel.appendLine(`Engine selected: ${activeEngine}`);
 
     // Initialize project detector
     projectDetector = new ProjectDetector();
@@ -195,6 +216,12 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('ai-fdocs')) {
                 outputChannel.appendLine('Configuration changed, refreshing...');
+                const nextEngine = getActiveEngine(context);
+                if (nextEngine !== activeEngine) {
+                    activeEngine = nextEngine;
+                    commandExecutor = createEngineExecutor(activeEngine, binaryManager);
+                    outputChannel.appendLine(`Engine switched to: ${activeEngine}`);
+                }
                 treeDataProvider.refresh();
                 updateStatusBar();
             }
@@ -213,8 +240,8 @@ function updateStatusBar() {
     const mode = getActiveSyncMode();
     const health = treeDataProvider.getHealthSummary();
 
-    statusBarItem.text = `${emoji} AI Docs: ${health.synced} synced / ${health.outdated} outdated / ${health.errors} errors · ${mode}`;
-    statusBarItem.tooltip = `Mode: ${mode}. Click to refresh documentation status`;
+    statusBarItem.text = `${emoji} AI Docs: ${health.synced} synced / ${health.outdated} outdated / ${health.errors} errors · ${mode} · ${activeEngine}`;
+    statusBarItem.tooltip = `Mode: ${mode}. Engine: ${activeEngine}. Click to refresh documentation status`;
 }
 
 export function deactivate() {

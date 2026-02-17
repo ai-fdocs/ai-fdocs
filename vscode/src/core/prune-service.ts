@@ -3,7 +3,7 @@ import { CommandContext, CommandResult, createEmptyMetrics, ensureNotCancelled }
 export async function runPruneCommand(context: CommandContext): Promise<CommandResult> {
     ensureNotCancelled(context);
 
-    const { stdout } = await context.binaryManager.execute(['prune'], context.workspaceRoot);
+    const { stdout } = await context.executor.execute(['prune'], context.workspaceRoot);
     ensureNotCancelled(context);
 
     return {

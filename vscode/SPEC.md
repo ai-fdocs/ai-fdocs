@@ -50,6 +50,7 @@ Validation rules mirror CLI constraints for shared fields:
 - `latest_ttl_hours` must be an integer `> 0`.
 - `docs_source`: `github | npm_tarball`.
 - `sync_mode`: `lockfile | latest-docs` (with `latest_docs` normalized when loaded from TOML).
+- `engine`: `internal | external-cli`.
 - `report_format`: `text | json`.
 - `format`: `table | json`.
 
@@ -63,9 +64,22 @@ Validation rules mirror CLI constraints for shared fields:
 | Prune stale docs | `settings.prune` | `settings.prune` | `ai-fdocs.prune` |
 | Docs source | `settings.docs_source` (`github`) | `settings.docs_source` (`github|npm_tarball`) | `ai-fdocs.docsSource` (`github|npm_tarball`) |
 | Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs`) |
+| Engine | n/a (selected by extension) | n/a (selected by extension) | `ai-fdocs.engine` (`internal|external-cli`) |
 | Latest TTL (hours) | `settings.latest_ttl_hours` | `settings.latest_ttl_hours` | `ai-fdocs.latestTtlHours` |
 | Report format | CLI flag (`--report-format`) | CLI flag (`--report-format`) | `ai-fdocs.reportFormat` |
 | Output format | CLI flag (`--format`) | CLI flag (`--format`) | `ai-fdocs.format` |
+
+
+### 2.6 Engine migration (`ai-fdocs.engine`)
+
+- New flag `ai-fdocs.engine` controls sync/check execution pipeline:
+  - `internal`: new internal module.
+  - `external-cli`: legacy fallback implementation.
+- Phase 1 rollout policy:
+  - **Dev/Canary builds**: default to `internal`.
+  - **Stable builds**: default to `external-cli`, but user can switch at any time.
+- Rollback path: set `ai-fdocs.engine = "external-cli"` and rerun sync/check commands.
+- Diagnostics/telemetry: failed `sync`/`check` scenarios must emit command + engine + failure reason for stability comparison between `internal` and `external-cli`.
 
 ## 3. User Interface Features
 

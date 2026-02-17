@@ -123,6 +123,7 @@ Configure the extension via VS Code settings:
   "ai-fdocs.prune": true,               // settings.prune
   "ai-fdocs.docsSource": "npm_tarball",// settings.docs_source
   "ai-fdocs.syncMode": "lockfile",     // settings.sync_mode
+  "ai-fdocs.engine": "external-cli",    // execution engine: internal | external-cli
   "ai-fdocs.latestTtlHours": 24,        // settings.latest_ttl_hours
   "ai-fdocs.reportFormat": "text",     // report output: text | json
   "ai-fdocs.format": "table"           // table output: table | json
@@ -139,9 +140,32 @@ Configure the extension via VS Code settings:
 | Prune stale docs | `settings.prune` | `settings.prune` | `ai-fdocs.prune` |
 | Docs source | `settings.docs_source` (`github`) | `settings.docs_source` (`github|npm_tarball`) | `ai-fdocs.docsSource` (`github|npm_tarball`) |
 | Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs`) |
+| Engine | n/a (selected by extension) | n/a (selected by extension) | `ai-fdocs.engine` (`internal|external-cli`) |
 | Latest TTL (hours) | `settings.latest_ttl_hours` | `settings.latest_ttl_hours` | `ai-fdocs.latestTtlHours` |
 | Report format | CLI flag (`--report-format`) | CLI flag (`--report-format`) | `ai-fdocs.reportFormat` |
 | Output format | CLI flag (`--format`) | CLI flag (`--format`) | `ai-fdocs.format` |
+
+## Migration to `ai-fdocs.engine`
+
+### What changed
+
+- Added new feature flag `ai-fdocs.engine` with values:
+  - `internal` — new in-extension engine module.
+  - `external-cli` — legacy CLI fallback path.
+- During phase 1 rollout, **dev/canary** runs `internal` by default, while **stable** keeps `external-cli` as default and remains fully switchable via settings.
+- `sync` and `check` failures now emit structured diagnostics telemetry events in the output channel for engine-to-engine stability comparison.
+
+### How to rollback to legacy
+
+Set in VS Code settings:
+
+```json
+{
+  "ai-fdocs.engine": "external-cli"
+}
+```
+
+Then run **AI-Docs: Sync** and **AI-Docs: Check** to validate behavior on the legacy path.
 
 ## Troubleshooting
 

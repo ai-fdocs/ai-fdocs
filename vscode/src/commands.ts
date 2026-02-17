@@ -98,7 +98,12 @@ function showCommandResult(commandName: UnifiedCommandName, result: CommandResul
     }
 }
 
-function handleCommandError(commandName: UnifiedCommandName, outputChannel: vscode.OutputChannel, error: unknown): void {
+function handleCommandError(
+    commandName: UnifiedCommandName,
+    outputChannel: vscode.OutputChannel,
+    error: unknown,
+    context?: CommandContext
+): void {
     if (error instanceof vscode.CancellationError) {
         outputChannel.appendLine(`${commandName} cancelled by user.`);
         vscode.window.showInformationMessage(`AI-Docs: ${commandName} cancelled.`);
@@ -106,6 +111,15 @@ function handleCommandError(commandName: UnifiedCommandName, outputChannel: vsco
     }
 
     const message = error instanceof Error ? error.message : String(error);
+
+    if ((commandName === 'sync' || commandName === 'check') && context) {
+        context.diagnostics?.emitFailure(commandName, {
+            engine: context.executor.engine,
+            reason: 'exception',
+            message,
+        });
+    }
+
     outputChannel.appendLine(`${commandName} failed: ${message}`);
     vscode.window.showErrorMessage(`AI-Docs ${commandName} failed: ${message}`);
 }
@@ -125,6 +139,8 @@ export async function runUnifiedCommand(
         }
     }
 
+    let activeContext: CommandContext | undefined;
+
     try {
         await vscode.window.withProgress(
             {
@@ -135,8 +151,17 @@ export async function runUnifiedCommand(
             async (progress, token) => {
                 progress.report({ message: definition.startMessage });
 
-                const commandContext = createContext(token);
-                const result = await definition.run(commandContext);
+                activeContext = createContext(token);
+                const result = await definition.run(activeContext);
+
+                if ((commandName === 'sync' || commandName === 'check') && !result.ok) {
+                    activeContext.diagnostics?.emitFailure(commandName, {
+                        engine: activeContext.executor.engine,
+                        reason: 'validation',
+                        message: result.message,
+                        errorCount: result.metrics.errors,
+                    });
+                }
 
                 appendCommandOutput(outputChannel, result.command, result.rawOutput);
                 showCommandResult(commandName, result);
@@ -147,6 +172,6 @@ export async function runUnifiedCommand(
             }
         );
     } catch (error) {
-        handleCommandError(commandName, outputChannel, error);
+        handleCommandError(commandName, outputChannel, error, activeContext);
     }
 }
