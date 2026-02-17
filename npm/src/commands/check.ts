@@ -25,9 +25,26 @@ interface CheckIssue {
   kind: "missing" | "config_changed" | "not_in_lockfile";
 }
 
+export interface CheckStatus {
+  package_name: string;
+  lock_version: string;
+  docs_version?: string;
+  status: "Synced" | "Outdated" | "Missing" | "Corrupted";
+  reason?: string;
+  reason_code?: CheckIssue["kind"] | "ok";
+}
+
+export interface CheckSummary {
+  total: number;
+  synced: number;
+  missing: number;
+  outdated: number;
+  corrupted: number;
+}
+
 export interface CheckReport {
-  ok: boolean;
-  issues: CheckIssue[];
+  summary: CheckSummary;
+  statuses: CheckStatus[];
 }
 
 export type CheckFormat = "text" | "json";
@@ -60,11 +77,20 @@ export async function buildCheckReport(
   }
 
   const issues: CheckIssue[] = [];
+  const statuses: CheckStatus[] = [];
 
   for (const [name, pkgConfig] of Object.entries(config.packages)) {
     const version = targetVersions.get(name);
     if (!version) {
-      issues.push({ name, kind: syncMode === "latest_docs" ? "missing" : "not_in_lockfile" });
+      const issue: CheckIssue = { name, kind: syncMode === "latest_docs" ? "missing" : "not_in_lockfile" };
+      issues.push(issue);
+      statuses.push({
+        package_name: name,
+        lock_version: "unknown",
+        status: "Missing",
+        reason: formatIssue(issue),
+        reason_code: issue.kind,
+      });
       continue;
     }
 
@@ -72,12 +98,29 @@ export async function buildCheckReport(
     const metaPath = join(pkgDir, ".aifd-meta.toml");
 
     if (!existsSync(pkgDir) || !existsSync(metaPath)) {
-      issues.push({ name, kind: "missing" });
+      const issue: CheckIssue = { name, kind: "missing" };
+      issues.push(issue);
+      statuses.push({
+        package_name: name,
+        lock_version: version,
+        status: "Missing",
+        reason: formatIssue(issue),
+        reason_code: issue.kind,
+      });
       continue;
     }
 
     if (!isCachedV2(outputDir, name, version, computeConfigHash(pkgConfig))) {
-      issues.push({ name, kind: "config_changed" });
+      const issue: CheckIssue = { name, kind: "config_changed" };
+      issues.push(issue);
+      statuses.push({
+        package_name: name,
+        lock_version: version,
+        docs_version: version,
+        status: "Outdated",
+        reason: formatIssue(issue),
+        reason_code: issue.kind,
+      });
       continue;
     }
 
@@ -90,18 +133,54 @@ export async function buildCheckReport(
           const now = new Date();
           const diffMs = now.getTime() - date.getTime();
           if (diffMs > config.settings.latest_ttl_hours * 60 * 60 * 1000) {
-            issues.push({ name, kind: "config_changed" }); // Treat expired TTL as needing update
+            const issue: CheckIssue = { name, kind: "config_changed" };
+            issues.push(issue); // Treat expired TTL as needing update
+            statuses.push({
+              package_name: name,
+              lock_version: version,
+              docs_version: version,
+              status: "Outdated",
+              reason: formatIssue(issue),
+              reason_code: issue.kind,
+            });
+            continue;
           }
         }
       } catch {
-        issues.push({ name, kind: "missing" });
+        const issue: CheckIssue = { name, kind: "missing" };
+        issues.push(issue);
+        statuses.push({
+          package_name: name,
+          lock_version: version,
+          status: "Missing",
+          reason: formatIssue(issue),
+          reason_code: issue.kind,
+        });
+        continue;
       }
     }
+
+    statuses.push({
+      package_name: name,
+      lock_version: version,
+      docs_version: version,
+      status: "Synced",
+      reason: "ok",
+      reason_code: "ok",
+    });
   }
 
+  const summary: CheckSummary = {
+    total: statuses.length,
+    synced: statuses.filter((status) => status.status === "Synced").length,
+    missing: statuses.filter((status) => status.status === "Missing").length,
+    outdated: statuses.filter((status) => status.status === "Outdated").length,
+    corrupted: statuses.filter((status) => status.status === "Corrupted").length,
+  };
+
   return {
-    ok: issues.length === 0,
-    issues,
+    summary,
+    statuses,
   };
 }
 
@@ -112,13 +191,17 @@ function formatIssue(issue: CheckIssue): string {
 }
 
 function renderTextReport(report: CheckReport): void {
-  if (report.ok) {
+  const hasIssues = report.summary.missing + report.summary.outdated + report.summary.corrupted > 0;
+
+  if (!hasIssues) {
     console.log(chalk.green("✅ All documentation is up-to-date."));
     return;
   }
 
   console.error(chalk.red("❌ Documentation is outdated:"));
-  for (const issue of report.issues) console.error(chalk.red(`  - ${formatIssue(issue)}`));
+  for (const status of report.statuses.filter((item) => item.status !== "Synced")) {
+    console.error(chalk.red(`  - ${status.reason ?? `${status.package_name}: ${status.status}`}`));
+  }
   console.error(chalk.yellow("Run `ai-fdocs sync` to fix."));
 }
 
@@ -144,5 +227,6 @@ export async function cmdCheck(
     renderTextReport(report);
   }
 
-  process.exit(report.ok ? 0 : 1);
+  const hasIssues = report.summary.missing + report.summary.outdated + report.summary.corrupted > 0;
+  process.exit(hasIssues ? 1 : 0);
 }

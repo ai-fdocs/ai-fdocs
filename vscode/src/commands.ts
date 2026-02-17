@@ -73,22 +73,19 @@ function appendCommandOutput(outputChannel: vscode.OutputChannel, command: strin
 }
 
 function showCommandResult(commandName: UnifiedCommandName, result: CommandResult): void {
-    if (commandName === 'check' && result.data && typeof result.data === 'object') {
-        const summary = (result.data as { summary?: { missing?: number; outdated?: number; corrupted?: number } }).summary;
-        if (summary) {
-            const missing = summary.missing ?? 0;
-            const outdated = summary.outdated ?? 0;
-            const corrupted = summary.corrupted ?? 0;
+    if (commandName === 'check') {
+        const missing = result.metrics.skipped;
+        const outdatedAndCorrupted = result.metrics.errors;
 
-            if (missing > 0 || outdated > 0 || corrupted > 0) {
-                vscode.window.showWarningMessage(
-                    `Documentation check: ${missing} missing, ${outdated} outdated, ${corrupted} corrupted`
-                );
-                return;
-            }
-            vscode.window.showInformationMessage('All documentation is up to date!');
+        if (missing > 0 || outdatedAndCorrupted > 0) {
+            vscode.window.showWarningMessage(
+                `Documentation check: ${missing} missing, ${outdatedAndCorrupted} outdated/corrupted`
+            );
             return;
         }
+
+        vscode.window.showInformationMessage('All documentation is up to date!');
+        return;
     }
 
     if (result.ok) {
