@@ -79,6 +79,14 @@ export async function activate(context: vscode.ExtensionContext) {
         `Detected ${ProjectDetector.getProjectTypeName(currentProject.type)} project at ${currentProject.rootPath}`
     );
 
+    try {
+        const settings = await resolveSettings(currentProject.rootPath);
+        outputChannel.appendLine(`Loaded settings: ${JSON.stringify(settings)}`);
+    } catch (error: any) {
+        outputChannel.appendLine(`Configuration error: ${error.message}`);
+        vscode.window.showErrorMessage(`ai-fdocs config is invalid: ${error.message}`);
+    }
+
     // Initialize tree data provider
     treeDataProvider = new DependencyTreeProvider(binaryManager, outputChannel);
     treeDataProvider.setProjectRoot(currentProject.rootPath);

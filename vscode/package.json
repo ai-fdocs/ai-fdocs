@@ -136,6 +136,65 @@
                     "type": "string",
                     "default": "fdocs",
                     "description": "Output directory for documentation files."
+                },
+                "ai-fdocs.maxFileSizeKb": {
+                    "type": "number",
+                    "default": 512,
+                    "minimum": 1,
+                    "description": "Maximum size (KB) for fetched documentation files."
+                },
+                "ai-fdocs.syncConcurrency": {
+                    "type": "number",
+                    "default": 8,
+                    "minimum": 1,
+                    "description": "Maximum number of concurrent sync operations."
+                },
+                "ai-fdocs.prune": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Remove stale documentation entries during sync/prune flows."
+                },
+                "ai-fdocs.docsSource": {
+                    "type": "string",
+                    "default": "npm_tarball",
+                    "enum": [
+                        "github",
+                        "npm_tarball"
+                    ],
+                    "description": "Primary docs source for dependency sync."
+                },
+                "ai-fdocs.syncMode": {
+                    "type": "string",
+                    "default": "lockfile",
+                    "enum": [
+                        "lockfile",
+                        "latest-docs"
+                    ],
+                    "description": "Sync strategy to use for resolving documentation versions."
+                },
+                "ai-fdocs.latestTtlHours": {
+                    "type": "number",
+                    "default": 24,
+                    "minimum": 1,
+                    "description": "TTL in hours for latest-docs mode cache."
+                },
+                "ai-fdocs.reportFormat": {
+                    "type": "string",
+                    "default": "text",
+                    "enum": [
+                        "text",
+                        "json"
+                    ],
+                    "description": "Report format for command output."
+                },
+                "ai-fdocs.format": {
+                    "type": "string",
+                    "default": "table",
+                    "enum": [
+                        "table",
+                        "json"
+                    ],
+                    "description": "Structured output format for commands that support --format."
                 }
             }
         }
@@ -158,10 +217,5 @@
         "eslint": "^8.57.0",
         "typescript": "^5.4.0",
         "@vscode/vsce": "^2.24.0"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/ai-fdocs/cargo-ai-fdocs.git"
-    },
-    "homepage": "https://github.com/ai-fdocs/cargo-ai-fdocs/blob/main/vscode/README.md"
+    }
 }
