@@ -215,6 +215,15 @@
                     ],
                     "description": "Sync strategy to use for resolving documentation versions."
                 },
+                "ai-fdocs.engine": {
+                    "type": "string",
+                    "default": "external-cli",
+                    "enum": [
+                        "internal",
+                        "external-cli"
+                    ],
+                    "description": "Execution engine for sync/check flows. In dev/canary builds the runtime default is internal; stable defaults to external-cli unless overridden."
+                },
                 "ai-fdocs.latestTtlHours": {
                     "type": "number",
                     "default": 24,

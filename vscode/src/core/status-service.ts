@@ -31,7 +31,7 @@ export async function runStatusCommand(context: CommandContext): Promise<Command
         args.push('--docs-source', context.settings.docsSource);
     }
 
-    const { stdout } = await context.binaryManager.execute(args, context.workspaceRoot);
+    const { stdout } = await context.executor.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);
 
     const output = parseJsonOutput<StatusOutput>(stdout);

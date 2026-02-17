@@ -49,7 +49,7 @@ export async function runCheckCommand(context: CommandContext): Promise<CommandR
         args.push('--docs-source', context.settings.docsSource);
     }
 
-    const { stdout } = await context.binaryManager.execute(args, context.workspaceRoot);
+    const { stdout } = await context.executor.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);
 
     const output = parseJsonOutput<CheckOutput>(stdout);
