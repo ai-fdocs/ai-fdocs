@@ -33,6 +33,40 @@ The **VS Code Extension** acts as the primary GUI for `AI Fresh Docs` (specifica
     - Map JSON output to `TreeDataProvider`.
     - Items: `Crate Name` -> `Version` -> `Status Icon`.
 
+### 2.4 Settings Resolution & Validation
+
+The extension resolves runtime settings from multiple sources in this order (highest priority first):
+
+1. **Command override** (per-command/explicit override)
+2. **VS Code settings** (`ai-fdocs.*`)
+3. **`ai-fdocs.toml` `[settings]` values**
+4. **Built-in defaults**
+
+Validation rules mirror CLI constraints for shared fields:
+
+- `output_dir` must be a non-empty string.
+- `max_file_size_kb` must be an integer `> 0`.
+- `sync_concurrency` must be an integer between `1` and `50`.
+- `latest_ttl_hours` must be an integer `> 0`.
+- `docs_source`: `github | npm_tarball`.
+- `sync_mode`: `lockfile | latest-docs` (with `latest_docs` normalized when loaded from TOML).
+- `report_format`: `text | json`.
+- `format`: `table | json`.
+
+### 2.5 Config parity (Rust / NPM / VS Code)
+
+| Meaning | Rust (`ai-fdocs.toml`) | NPM (`ai-fdocs.toml`) | VS Code setting |
+| --- | --- | --- | --- |
+| Output dir | `settings.output_dir` | `settings.output_dir` | `ai-fdocs.outputDir` |
+| Max file size (KB) | `settings.max_file_size_kb` | `settings.max_file_size_kb` | `ai-fdocs.maxFileSizeKb` |
+| Sync concurrency | `settings.sync_concurrency` | `settings.sync_concurrency` | `ai-fdocs.syncConcurrency` |
+| Prune stale docs | `settings.prune` | `settings.prune` | `ai-fdocs.prune` |
+| Docs source | `settings.docs_source` (`github`) | `settings.docs_source` (`github|npm_tarball`) | `ai-fdocs.docsSource` (`github|npm_tarball`) |
+| Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs`) |
+| Latest TTL (hours) | `settings.latest_ttl_hours` | `settings.latest_ttl_hours` | `ai-fdocs.latestTtlHours` |
+| Report format | CLI flag (`--report-format`) | CLI flag (`--report-format`) | `ai-fdocs.reportFormat` |
+| Output format | CLI flag (`--format`) | CLI flag (`--format`) | `ai-fdocs.format` |
+
 ## 3. User Interface Features
 
 ### 3.1 Side Bar (Activity Bar)

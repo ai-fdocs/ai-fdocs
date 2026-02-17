@@ -111,12 +111,34 @@ Configure the extension via VS Code settings:
 
 ```json
 {
-  "ai-fdocs.binaryPath": "",           // Custom path to ai-fdocs binary
-  "ai-fdocs.autoSync": false,          // Auto-sync on lockfile changes
-  "ai-fdocs.syncOnSave": false,        // Auto-sync when saving ai-fdocs.toml
-  "ai-fdocs.outputDir": "fdocs"        // Output directory for docs
+  "ai-fdocs.binaryPath": "",            // Custom path to ai-fdocs binary
+  "ai-fdocs.autoSync": false,           // Auto-sync on lockfile changes
+  "ai-fdocs.syncOnSave": false,         // Auto-sync when saving ai-fdocs.toml
+  "ai-fdocs.outputDir": "fdocs",       // settings.output_dir
+  "ai-fdocs.maxFileSizeKb": 512,        // settings.max_file_size_kb
+  "ai-fdocs.syncConcurrency": 8,        // settings.sync_concurrency
+  "ai-fdocs.prune": true,               // settings.prune
+  "ai-fdocs.docsSource": "npm_tarball",// settings.docs_source
+  "ai-fdocs.syncMode": "lockfile",     // settings.sync_mode
+  "ai-fdocs.latestTtlHours": 24,        // settings.latest_ttl_hours
+  "ai-fdocs.reportFormat": "text",     // report output: text | json
+  "ai-fdocs.format": "table"           // table output: table | json
 }
 ```
+
+### Config parity (Rust / NPM / VS Code)
+
+| Meaning | Rust (`ai-fdocs.toml`) | NPM (`ai-fdocs.toml`) | VS Code setting |
+| --- | --- | --- | --- |
+| Output dir | `settings.output_dir` | `settings.output_dir` | `ai-fdocs.outputDir` |
+| Max file size (KB) | `settings.max_file_size_kb` | `settings.max_file_size_kb` | `ai-fdocs.maxFileSizeKb` |
+| Sync concurrency | `settings.sync_concurrency` | `settings.sync_concurrency` | `ai-fdocs.syncConcurrency` |
+| Prune stale docs | `settings.prune` | `settings.prune` | `ai-fdocs.prune` |
+| Docs source | `settings.docs_source` (`github`) | `settings.docs_source` (`github|npm_tarball`) | `ai-fdocs.docsSource` (`github|npm_tarball`) |
+| Sync mode | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `settings.sync_mode` (`lockfile|latest_docs|hybrid`) | `ai-fdocs.syncMode` (`lockfile|latest-docs`) |
+| Latest TTL (hours) | `settings.latest_ttl_hours` | `settings.latest_ttl_hours` | `ai-fdocs.latestTtlHours` |
+| Report format | CLI flag (`--report-format`) | CLI flag (`--report-format`) | `ai-fdocs.reportFormat` |
+| Output format | CLI flag (`--format`) | CLI flag (`--format`) | `ai-fdocs.format` |
 
 ## Troubleshooting
 
