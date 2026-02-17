@@ -3,6 +3,12 @@ import { BinaryManager } from './binary-manager';
 import { ProjectDetector, ProjectInfo } from './project-detector';
 import { DependencyTreeProvider, TreeItemType } from './dependency-tree-provider';
 import { syncAll } from './commands';
+import { CommandContext } from './core/command-types';
+import { runInitCommand } from './core/init-service';
+import { runSyncCommand } from './core/sync-service';
+import { runStatusCommand } from './core/status-service';
+import { runCheckCommand } from './core/check-service';
+import { runPruneCommand } from './core/prune-service';
 
 let outputChannel: vscode.OutputChannel;
 let binaryManager: BinaryManager;
@@ -10,6 +16,26 @@ let projectDetector: ProjectDetector;
 let treeDataProvider: DependencyTreeProvider;
 let statusBarItem: vscode.StatusBarItem;
 let currentProject: ProjectInfo | null = null;
+
+function createCommandContext(cancellationToken: vscode.CancellationToken): CommandContext {
+    const config = vscode.workspace.getConfiguration('ai-fdocs');
+
+    return {
+        workspaceRoot: currentProject?.rootPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+        settings: {
+            syncMode: config.get<'lockfile' | 'latest_docs' | 'hybrid'>('syncMode') ?? 'lockfile',
+            reportFormat: 'json',
+        },
+        logger: {
+            info: message => outputChannel.appendLine(message),
+            warn: message => outputChannel.appendLine(`[warn] ${message}`),
+            error: message => outputChannel.appendLine(`[error] ${message}`),
+            debug: message => outputChannel.appendLine(`[debug] ${message}`),
+        },
+        cancellationToken,
+        binaryManager,
+    };
+}
 
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -100,7 +126,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 },
                 async () => {
                     try {
-                        await binaryManager.execute(['init']);
+                        const context = createCommandContext(new vscode.CancellationTokenSource().token);
+                        await runInitCommand(context);
                         vscode.window.showInformationMessage('ai-fdocs.toml created successfully!');
                         await treeDataProvider.refresh();
                     } catch (error: any) {
@@ -131,7 +158,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 },
                 async () => {
                     try {
-                        await binaryManager.execute(['prune']);
+                        const context = createCommandContext(new vscode.CancellationTokenSource().token);
+                        await runPruneCommand(context);
                         vscode.window.showInformationMessage('Documentation pruned successfully!');
                         await treeDataProvider.refresh();
                     } catch (error: any) {
@@ -145,13 +173,19 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('ai-fdocs.check', async () => {
             try {
-                const { stdout } = await binaryManager.execute(['check', '--format', 'json']);
+                const commandContext = createCommandContext(new vscode.CancellationTokenSource().token);
+                const result = await runCheckCommand(commandContext);
+
                 outputChannel.appendLine('=== Check Output ===');
-                outputChannel.appendLine(stdout);
+                outputChannel.appendLine(result.rawOutput ?? '');
                 outputChannel.show();
 
-                const result = JSON.parse(stdout);
-                const summary = result.summary;
+                const summary = result.data?.summary;
+
+                if (!summary) {
+                    vscode.window.showWarningMessage('Check completed, but summary is unavailable.');
+                    return;
+                }
 
                 if (summary.missing > 0 || summary.outdated > 0 || summary.corrupted > 0) {
                     vscode.window.showWarningMessage(
@@ -180,7 +214,8 @@ export async function activate(context: vscode.ExtensionContext) {
     if (autoSync) {
         projectDetector.setupWatchers(async () => {
             outputChannel.appendLine('Lockfile or config changed, auto-syncing...');
-            await syncAll(binaryManager, outputChannel, false);
+            const commandContext = createCommandContext(new vscode.CancellationTokenSource().token);
+            await runSyncCommand(commandContext, { force: false });
             await treeDataProvider.refresh();
             updateStatusBar();
         });
