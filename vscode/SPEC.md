@@ -2,20 +2,19 @@
 
 ## 1. Overview
 
-The **VS Code Extension** acts as the primary GUI for `AI Fresh Docs` (specifically wrapping the `cargo-ai-fdocs` Core binary). It provides visibility into project dependencies and "one-click" administration of documentation syncing.
+The **VS Code Extension** is a standalone `AI Fresh Docs` module with its own source adapters for Rust and NPM documentation. It provides visibility into project dependencies and one-click administration of documentation syncing.
 
-**Key Constraint**: The extension MUST wrap the **AI Fresh Docs Core** (Rust binary). It should NOT reimplement core logic in TypeScript unless absolutely necessary for UI responsiveness.
+**Key Constraint**: The extension MUST own its source-resolution and fetching pipeline as an internal module, and provide unified behavior for Rust and NPM docs flows. External CLI execution can remain as a temporary compatibility fallback, but not as the primary architecture.
 
 ## 2. Technical Architecture
 
-### 2.1 Binary Management
+### 2.1 Source Module Management
 
-- **Detection**: On startup, check for `ai-fdocs` in PATH.
-- **Downloading**: If missing, prompt user to:
-  - [Download Prebuilt Binary] (GitHub Release)
-  - [Build from Source] (`cargo install cargo-ai-fdocs`)
-  - [Use NPM Wrapper] (`npm install -g ai-fdocs` -> points to `npn/` CLI) - *Fallback option*
-- **Configuration**: `ai-fdocs.binaryPath` setting to override location.
+- **Core requirement**: build internal adapters for both ecosystems:
+  - `rust_latest_docs`: crates.io -> docs.rs -> GitHub fallback
+  - `npm_release_docs`: npm registry -> npm tarball -> GitHub fallback
+- **Optional fallback**: allow CLI bridge (`ai-fdocs.binaryPath`) for migration period only.
+- **Observability**: keep per-dependency source kind and fallback reason in status model.
 
 ### 2.2 Project Detection
 
@@ -27,11 +26,12 @@ The **VS Code Extension** acts as the primary GUI for `AI Fresh Docs` (specifica
 
 ### 2.3 Data Flow
 
-1. **Read Config**: Parse `ai-fdocs.toml` (or generate/init one via `ai-fdocs init` if missing).
-2. **Fetch Status**: Run `ai-fdocs status --json` (or `check --json`).
-3. **Update UI**:
-    - Map JSON output to `TreeDataProvider`.
-    - Items: `Crate Name` -> `Version` -> `Status Icon`.
+1. **Read Config**: Parse `ai-fdocs.toml` and extension settings.
+2. **Resolve Source Strategy**: choose Rust/NPM adapter per workspace package.
+3. **Fetch/Sync via internal module**: run internal `sync/status/check` pipeline.
+4. **Update UI**:
+    - Map unified status model to `TreeDataProvider`.
+    - Items: `Package` -> `Version` -> `Status Icon` + `source_kind`.
 
 ## 3. User Interface Features
 
@@ -48,13 +48,13 @@ The **VS Code Extension** acts as the primary GUI for `AI Fresh Docs` (specifica
 ### 3.2 Commands (Palette & Buttons)
 
 - `AI-Docs: Sync All` (Button on view title)
-  - Runs `ai-fdocs sync`. Shows progress notification.
+  - Runs extension internal sync module for all detected dependencies. Shows progress notification.
 - `AI-Docs: Force Sync` (ContextMenu on package)
-  - Runs `ai-fdocs sync --force <package>`.
+  - Runs internal force refresh for selected dependency (with source adapter override if needed).
 - `AI-Docs: Prune` (Button on view title)
-  - Runs `ai-fdocs prune`.
+  - Runs internal prune for stale artifacts.
 - `AI-Docs: Initialize` (If config missing)
-  - Runs `ai-fdocs init`.
+  - Creates baseline config and source settings for internal module.
 
 ### 3.3 Editor Integration
 
@@ -65,21 +65,21 @@ The **VS Code Extension** acts as the primary GUI for `AI Fresh Docs` (specifica
 
 ## 4. Implementation Plan (Agent Instructions)
 
-### Phase 1: Skeleton & Binary
+### Phase 1: Skeleton & Internal Source Module
 
 1. Initialize extension with `yo code`.
-2. Implement `BinaryManager` class to check/find `ai-fdocs`.
-3. Register `ai-fdocs.version` command to test binary connection.
+2. Define unified source interfaces (`SourceResolver`, `SourceFetcher`, `ArtifactStore`).
+3. Implement Rust/NPM adapter scaffolding and status model.
 
 ### Phase 2: Tree View & Status
 
 1. Create `DependencyTreeProvider` implementing `vscode.TreeDataProvider`.
-2. Implement `refresh()` method that calls `ai-fdocs status --json`.
-3. Define `DependencyItem` class.
+2. Implement `refresh()` method that calls internal status service (not external CLI by default).
+3. Define `DependencyItem` class with source metadata.
 
 ### Phase 3: Commands & Interaction
 
-1. Bind UI buttons to commands executing `ai-fdocs sync`.
+1. Bind UI buttons to internal sync/status/check commands.
 2. Implement `vscode.window.withProgress` for long-running syncs.
 3. Add "Open Markdown Preview" command for documentation files.
 
@@ -97,8 +97,8 @@ The **VS Code Extension** acts as the primary GUI for `AI Fresh Docs` (specifica
 
 ## 6. Prompt for Agent
 >
-> "You are an expert VS Code Extension developer. Your task is to implement the `DependencyTreeProvider` for `ai-fdocs`.
-> The extension must spawn the `ai-fdocs` binary with the `status --json` argument.
-> Parse the output JSON which looks like `{ "crates": { "serde": { "status": "synced", ... } } }`.
-> Render a TreeView where each crate is an item with an icon based on its status.
-> Handle errors gracefully if the binary is not found."
+> "You are an expert VS Code Extension developer. Implement `DependencyTreeProvider` and an internal status service for ai-fdocs.
+> The extension must use its internal Rust/NPM source adapters by default and expose source kind in UI.
+> CLI spawning is allowed only as fallback compatibility mode.
+> Render a TreeView where each package has status + source icon/label.
+> Handle degraded upstream states gracefully (rate limit, fallback used, partial sync)."
