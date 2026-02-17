@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BinaryManager } from './binary-manager';
-import { DependencyStatus, parseStatusOutput, getPackageName } from './types';
+import { DependencyStatus, getPackageName } from './types';
+import { normalizeDependencyStatus, parseStatusOutput } from './core/normalize-status';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -66,7 +67,7 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<TreeItemT
         let errors = 0;
 
         for (const dep of this.dependencies) {
-            const normalized = DependencyItem.normalizeStatus(dep.status);
+            const normalized = normalizeDependencyStatus(dep);
             if (normalized === 'synced') {
                 synced += 1;
             } else if (normalized === 'outdated') {
@@ -94,7 +95,7 @@ export class DependencyItem extends vscode.TreeItem {
         super(getPackageName(dependency), vscode.TreeItemCollapsibleState.Collapsed);
 
         this.packageVersion = dependency.docs_version || dependency.lock_version;
-        this.normalizedStatus = DependencyItem.normalizeStatus(dependency.status);
+        this.normalizedStatus = normalizeDependencyStatus(dependency);
         this.sourceKind = dependency.source_kind ?? 'unknown';
         this.fallback = Boolean(dependency.is_fallback || dependency.status === 'SyncedFallback');
         this.lastSyncAt = dependency.last_sync_at;
@@ -103,19 +104,6 @@ export class DependencyItem extends vscode.TreeItem {
         this.description = this.buildDescription();
         this.iconPath = this.getIcon();
         this.contextValue = 'package';
-    }
-
-    static normalizeStatus(rawStatus: string): 'synced' | 'outdated' | 'missing' | 'corrupted' {
-        if (rawStatus === 'Synced' || rawStatus === 'SyncedFallback') {
-            return 'synced';
-        }
-        if (rawStatus === 'Outdated') {
-            return 'outdated';
-        }
-        if (rawStatus === 'Missing') {
-            return 'missing';
-        }
-        return 'corrupted';
     }
 
     getChildren(): TreeItemType[] {

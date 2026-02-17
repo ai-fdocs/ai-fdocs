@@ -1,4 +1,5 @@
 import { DocsSource, SourceKind, SyncMode } from './sources/source-types';
+import { parseStatusOutput as parseStatusOutputCore } from './core/normalize-status';
 
 export interface StatusSummary {
     total: number;
@@ -62,42 +63,7 @@ export interface AiFdocsSettings {
     format: TableFormat;
 }
 
-export function parseStatusOutput(jsonOutput: string): StatusOutput {
-    try {
-        const parsed = JSON.parse(jsonOutput);
-
-        // Rust CLI shape: { summary, statuses }
-        if (Array.isArray(parsed.statuses)) {
-            return parsed as StatusOutput;
-        }
-
-        // NPM CLI shape: { summary, packages }
-        if (Array.isArray(parsed.packages)) {
-            const statuses: DependencyStatus[] = parsed.packages.map((pkg: any) => ({
-                package_name: pkg.name,
-                lock_version: pkg.lockVersion ?? 'unknown',
-                status: pkg.status,
-                reason: pkg.reason,
-                is_fallback: pkg.isFallback,
-            }));
-
-            return {
-                summary: {
-                    total: parsed.summary?.total ?? statuses.length,
-                    synced: parsed.summary?.synced ?? 0,
-                    missing: statuses.filter(item => item.status === 'Missing').length,
-                    outdated: statuses.filter(item => item.status === 'Outdated').length,
-                    corrupted: statuses.filter(item => item.status === 'Corrupted').length,
-                },
-                statuses,
-            };
-        }
-
-        throw new Error('Unsupported status output shape');
-    } catch (error) {
-        throw new Error(`Failed to parse status output: ${error}`);
-    }
-}
+export const parseStatusOutput = parseStatusOutputCore;
 
 export function getPackageName(dep: DependencyStatus): string {
     return dep.crate_name || dep.package_name || 'unknown';

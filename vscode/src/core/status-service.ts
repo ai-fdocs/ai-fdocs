@@ -5,9 +5,9 @@ import {
     createEmptyMetrics,
     ensureNotCancelled,
     normalizeSourceMetrics,
-    parseJsonOutput,
 } from './command-types';
 import { DependencyStatus, StatusOutput } from '../types';
+import { parseStatusOutput } from './normalize-status';
 import { serializeReport } from './reporting';
 
 function accumulateByStatus(dependencyStatus: DependencyStatus): SourceMetrics {
@@ -34,7 +34,7 @@ export async function runStatusCommand(context: CommandContext): Promise<Command
     const { stdout } = await context.executor.execute(args, context.workspaceRoot);
     ensureNotCancelled(context);
 
-    const output = parseJsonOutput<StatusOutput>(stdout);
+    const output = parseStatusOutput(stdout);
 
     const metrics = createEmptyMetrics();
 
