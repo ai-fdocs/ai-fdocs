@@ -6,7 +6,7 @@ import {
     ensureNotCancelled,
     normalizeSourceMetrics,
 } from './command-types';
-import { toCliSyncMode } from './sync-mode';
+import { supportsDocsSourceFlag, toCompatibleCliSyncMode } from './cli-compat';
 import { DependencyStatus, StatusOutput } from '../types';
 import { parseStatusOutput } from './normalize-status';
 import { serializeReport } from './reporting';
@@ -26,9 +26,9 @@ export async function runStatusCommand(context: CommandContext): Promise<Command
 
     const args = ['status', '--format', 'json'];
     if (context.settings.syncMode) {
-        args.push('--mode', toCliSyncMode(context.settings.syncMode));
+        args.push('--mode', toCompatibleCliSyncMode(context, context.settings.syncMode));
     }
-    if (context.settings.docsSource) {
+    if (context.settings.docsSource && supportsDocsSourceFlag(context)) {
         args.push('--docs-source', context.settings.docsSource);
     }
 
