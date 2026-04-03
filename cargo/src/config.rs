@@ -296,7 +296,11 @@ mod tests {
 
     #[test]
     fn example_config_parses_with_config_load() {
-        let path = Path::new("examples/ai-docs.toml");
+        let path_buf = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("cargo crate should have repository root as parent")
+            .join("examples/ai-docs.toml");
+        let path = path_buf.as_path();
         let config = Config::load(path).expect("example config must parse");
 
         assert!(config.crates.contains_key("serde"));

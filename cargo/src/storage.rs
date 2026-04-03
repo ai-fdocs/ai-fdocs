@@ -10,17 +10,29 @@ use crate::error::{AiDocsError, Result};
 use crate::fetcher::github::{FetchedFile, ResolvedRef};
 use crate::processor::changelog;
 
-const META_SCHEMA_VERSION: u32 = 2;
+pub const META_SCHEMA_VERSION: u32 = 2;
+
+fn default_false() -> bool {
+    false
+}
+
+fn default_empty_string() -> String {
+    String::new()
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct CrateMeta {
     #[serde(default)]
     pub schema_version: u32,
+    #[serde(default = "default_empty_string")]
     pub version: String,
+    #[serde(default = "default_empty_string")]
     pub git_ref: String,
+    #[serde(default = "default_empty_string")]
     pub fetched_at: String,
+    #[serde(default = "default_false")]
     pub is_fallback: bool,
-    #[serde(default)]
+    #[serde(default, alias = "config_fingerprint")]
     pub config_hash: Option<String>, // Renamed from config_fingerprint
     #[serde(default)]
     pub source_kind: Option<String>,
@@ -172,11 +184,16 @@ fn load_meta_with_migration(meta_path: &Path) -> Option<CrateMeta> {
     let content = fs::read_to_string(meta_path).ok()?;
     let mut meta: CrateMeta = toml::from_str(&content).ok()?;
 
+    if meta.version.trim().is_empty() {
+        return None;
+    }
+
     if meta.schema_version < META_SCHEMA_VERSION {
-        // Auto-migrate if needed, but for hash check we might just invalidate if hash is missing.
-        // For now, allow reading old meta, but is_cached will fail if hash is missing/mismatch.
-        // We don't strictly need to write back immediately unless we have new data.
-        // But let's treat it as valid structure.
+        meta.schema_version = META_SCHEMA_VERSION;
+        if meta.fetched_at.trim().is_empty() {
+            meta.fetched_at = Utc::now().format("%Y-%m-%d").to_string();
+        }
+        let _ = save_meta(meta_path, &meta);
     }
 
     if meta.schema_version > META_SCHEMA_VERSION {
@@ -635,7 +652,7 @@ config_fingerprint = "abc"
         assert_eq!(migrated.schema_version, META_SCHEMA_VERSION);
 
         let rewritten = fs::read_to_string(&meta_path).expect("read rewritten meta");
-        assert!(rewritten.contains("schema_version = 1"));
+        assert!(rewritten.contains("schema_version = 2"));
 
         let _ = fs::remove_dir_all(&tmp);
     }
