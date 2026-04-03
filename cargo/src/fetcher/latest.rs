@@ -248,17 +248,15 @@ fn find_closing_div(html: &str) -> Option<usize> {
     None
 }
 
-fn strip_html_tags(crate_name: &str, version: &str, html: &str) -> String {
+fn strip_html_tags(_crate_name: &str, _version: &str, html: &str) -> String {
     let mut out = String::new();
     let mut in_tag = false;
-    let mut in_pre = false;
     let mut tag_buffer = String::new();
 
     let bytes = html.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i..].starts_with(b"<pre") {
-            in_pre = true;
             out.push_str("\n```rust\n");
             while i < bytes.len() && bytes[i] != b'>' {
                 i += 1;
@@ -267,7 +265,6 @@ fn strip_html_tags(crate_name: &str, version: &str, html: &str) -> String {
             continue;
         }
         if bytes[i..].starts_with(b"</pre>") {
-            in_pre = false;
             out.push_str("\n```\n");
             i += 6;
             continue;
@@ -278,24 +275,14 @@ fn strip_html_tags(crate_name: &str, version: &str, html: &str) -> String {
             tag_buffer.clear();
         } else if bytes[i] == b'>' {
             in_tag = false;
-            
-            // Handle basic link rewriting if we just closed an <a> tag
             let normalized_tag = tag_buffer.to_lowercase();
-            if normalized_tag.starts_with("a ") {
-                if let Some(abs_href) = extract_href(&tag_buffer) {
-                    // We record the link to be appended after the link text
-                    out.push_str(" (");
-                    out.push_str(&abs_href);
-                    out.push(')');
-                }
-            }
-            
-            // Add spacing for structural tags
-            if normalized_tag.starts_with("p") || normalized_tag.starts_with("/p") || 
-               normalized_tag.starts_with("h") || normalized_tag.starts_with("/h") ||
-               normalized_tag.starts_with("li") || normalized_tag.starts_with("/li") ||
-               normalized_tag.starts_with("div") || normalized_tag.starts_with("/div") ||
-               normalized_tag.starts_with("br") {
+
+            if normalized_tag.starts_with("/p")
+                || normalized_tag.starts_with("/h")
+                || normalized_tag.starts_with("/li")
+                || normalized_tag.starts_with("/div")
+                || normalized_tag.starts_with("br")
+            {
                 out.push('\n');
             }
         } else if in_tag {
@@ -332,37 +319,6 @@ fn strip_html_tags(crate_name: &str, version: &str, html: &str) -> String {
         .replace("&#39;", "'");
     
     clean_markdown_whitespace(&result)
-}
-
-fn extract_href(tag: &str) -> Option<String> {
-    let tag_lower = tag.to_lowercase();
-    let href_start = tag_lower.find("href=")?;
-    let mut val_part = tag[href_start + 5..].trim_start();
-    
-    if val_part.starts_with('"') || val_part.starts_with('\'') {
-        let quote = val_part.chars().next().unwrap();
-        val_part = &val_part[1..];
-        if let Some(end) = val_part.find(quote) {
-            let href = &val_part[..end];
-            return Some(_href_to_absolute(href));
-        }
-    } else {
-        // Unquoted (less common but possible in messy HTML)
-        let end = val_part.find(|c| matches!(c, ' ' | '>')).unwrap_or(val_part.len());
-        let href = &val_part[..end];
-        return Some(_href_to_absolute(href));
-    }
-    None
-}
-
-fn _href_to_absolute(href: &str) -> String {
-    if href.starts_with("http") {
-        href.to_string()
-    } else if href.starts_with('/') {
-        format!("https://docs.rs{}", href)
-    } else {
-        href.to_string()
-    }
 }
 
 fn clean_markdown_whitespace(s: &str) -> String {

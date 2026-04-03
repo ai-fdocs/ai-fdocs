@@ -12,6 +12,7 @@ interface CratesIoResponse {
 
 interface LatestCacheEntry {
     version: string;
+    repository?: string;
     expiresAt: number;
 }
 
@@ -29,8 +30,17 @@ async function resolveCrateInfo(crateName: string): Promise<CratesIoResponse> {
 
 async function docsrsAvailable(crateName: string, version: string): Promise<boolean> {
     const url = `https://docs.rs/crate/${encodeURIComponent(crateName)}/${encodeURIComponent(version)}`;
-    const response = await requestWithRetry(url, 'HEAD');
-    return response.status >= 200 && response.status < 300;
+    const head = await requestWithRetry(url, 'HEAD');
+    if (head.status >= 200 && head.status < 300) {
+        return true;
+    }
+
+    if (head.status === 405 || head.status === 501) {
+        const get = await requestWithRetry(url, 'GET');
+        return get.status >= 200 && get.status < 300;
+    }
+
+    return false;
 }
 
 async function resolveLatestVersion(crateName: string, ttlHours: number): Promise<{ version: string; repository?: string }> {
@@ -38,7 +48,7 @@ async function resolveLatestVersion(crateName: string, ttlHours: number): Promis
     const cache = latestCache.get(crateName);
 
     if (cache && cache.expiresAt > now) {
-        return { version: cache.version };
+        return { version: cache.version, repository: cache.repository };
     }
 
     const info = await resolveCrateInfo(crateName);
@@ -49,6 +59,7 @@ async function resolveLatestVersion(crateName: string, ttlHours: number): Promis
 
     latestCache.set(crateName, {
         version,
+        repository: info.crate.repository,
         expiresAt: now + ttlHours * 60 * 60 * 1000,
     });
 

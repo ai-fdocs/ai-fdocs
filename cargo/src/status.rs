@@ -60,7 +60,7 @@ pub struct CrateStatus {
     pub is_fallback: bool,
 }
 
-use crate::storage::CrateMeta;
+use crate::storage::{CrateMeta, META_SCHEMA_VERSION};
 
 fn crate_status(
     crate_name: String,
@@ -134,15 +134,17 @@ pub async fn collect_status(
                 match std::fs::read_to_string(&meta_path) {
                     Ok(meta_raw) => match toml::from_str::<CrateMeta>(&meta_raw) {
                         Ok(meta) => {
-                            if meta.schema_version > 1 {
+                            if meta.schema_version > META_SCHEMA_VERSION {
                                 crate_status(
                                         crate_name,
                                         Some(lock_version.clone()),
                                         Some(lock_version),
                                         DocsStatus::Corrupted,
                                         format!(
-                                            ".aifd-meta.toml schema version {} is newer than supported version 1",
+                                            ".aifd-meta.toml schema version {} is newer than supported version {}",
                                             meta.schema_version
+                                            ,
+                                            META_SCHEMA_VERSION
                                         ),
                                         "meta_schema_unsupported",
                                         StatusMode::Lockfile,
@@ -252,15 +254,17 @@ pub async fn collect_status_latest(
                 Ok(meta_raw) => {
                     match toml::from_str::<CrateMeta>(&meta_raw) {
                         Ok(meta) => {
-                            if meta.schema_version > 1 {
+                            if meta.schema_version > META_SCHEMA_VERSION {
                                 crate_status(
                                     crate_name.clone(),
                                     None,
                                     Some(docs_version),
                                     DocsStatus::Corrupted,
                                     format!(
-                                        ".aifd-meta.toml schema version {} is newer than supported version 1",
+                                        ".aifd-meta.toml schema version {} is newer than supported version {}",
                                         meta.schema_version
+                                        ,
+                                        META_SCHEMA_VERSION
                                     ),
                                     "meta_schema_unsupported",
                                     StatusMode::LatestDocs,

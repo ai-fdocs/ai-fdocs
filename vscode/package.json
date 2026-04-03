@@ -257,7 +257,7 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile",
-        "test": "node ./dist/test/runTest.js",
+        "test": "node --test dist/test/**/*.test.js",
         "lint": "eslint src --ext ts",
         "package": "vsce package",
         "test:unit": "npm run compile && node --test dist/test/**/*.test.js"
