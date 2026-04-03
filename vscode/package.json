@@ -257,10 +257,10 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile",
-        "test": "node --test dist/src/test/**/*.test.js",
+        "test": "node --test dist/test/**/*.test.js",
         "lint": "eslint src --ext ts",
         "package": "vsce package",
-        "test:unit": "npm run compile && node --test dist/src/test/**/*.test.js"
+        "test:unit": "npm run compile && node --test dist/test/**/*.test.js"
     },
     "devDependencies": {
         "@types/node": "^20.12.0",

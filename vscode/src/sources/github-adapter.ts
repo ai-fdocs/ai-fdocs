@@ -21,7 +21,8 @@ function normalizeGithubUrl(input?: string): string | undefined {
 
     if (trimmed.includes('github.com/')) {
         const start = trimmed.indexOf('github.com/');
-        return `https://github.com/${trimmed.slice(start + 'github.com/'.length)}`;
+        const path = trimmed.slice(start + 'github.com/'.length).replace(/^\/+/, '');
+        return `https://github.com/${path}`;
     }
 
     return undefined;
