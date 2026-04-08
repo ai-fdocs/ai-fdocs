@@ -3,10 +3,35 @@ import { join } from "node:path";
 import YAML from "yaml";
 import { AiDocsError } from "./error.js";
 
-export function resolveVersions(projectRoot: string): Map<string, string> {
+export type LockfileType = "auto" | "npm" | "pnpm" | "yarn";
+
+export function resolveVersions(projectRoot: string, preferredLockfile: LockfileType = "auto"): Map<string, string> {
+  if (!["auto", "npm", "pnpm", "yarn"].includes(preferredLockfile)) {
+    throw new AiDocsError("Unsupported --lockfile value. Use auto | npm | pnpm | yarn.", "INVALID_CONFIG");
+  }
+
   const packageLock = join(projectRoot, "package-lock.json");
   const pnpmLock = join(projectRoot, "pnpm-lock.yaml");
   const yarnLock = join(projectRoot, "yarn.lock");
+
+  if (preferredLockfile === "npm") {
+    if (!existsSync(packageLock)) {
+      throw new AiDocsError("Requested --lockfile npm, but package-lock.json is missing", "LOCKFILE_NOT_FOUND");
+    }
+    return fromPackageLock(readFileSync(packageLock, "utf-8"));
+  }
+  if (preferredLockfile === "pnpm") {
+    if (!existsSync(pnpmLock)) {
+      throw new AiDocsError("Requested --lockfile pnpm, but pnpm-lock.yaml is missing", "LOCKFILE_NOT_FOUND");
+    }
+    return fromPnpmLock(readFileSync(pnpmLock, "utf-8"));
+  }
+  if (preferredLockfile === "yarn") {
+    if (!existsSync(yarnLock)) {
+      throw new AiDocsError("Requested --lockfile yarn, but yarn.lock is missing", "LOCKFILE_NOT_FOUND");
+    }
+    return fromYarnLock(readFileSync(yarnLock, "utf-8"));
+  }
 
   if (existsSync(packageLock)) {
     return fromPackageLock(readFileSync(packageLock, "utf-8"));

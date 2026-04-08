@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import chalk from "chalk";
 import { loadConfig, type DocsSource } from "../config.js";
-import { resolveVersions } from "../resolver.js";
+import { resolveVersions, type LockfileType } from "../resolver.js";
 import { computeConfigHash } from "../config-hash.js";
 import { isCachedV2 } from "../storage.js";
 import { AiDocsError } from "../error.js";
@@ -52,7 +52,8 @@ export type CheckFormat = "text" | "json";
 export async function buildCheckReport(
   projectRoot: string,
   modeOverride?: string,
-  docsSourceOverride?: string
+  docsSourceOverride?: string,
+  lockfile: LockfileType = "auto"
 ): Promise<CheckReport> {
   const config = loadConfig(projectRoot);
   const syncMode = modeOverride || config.settings.sync_mode;
@@ -73,7 +74,7 @@ export async function buildCheckReport(
       }
     }
   } else {
-    targetVersions = resolveVersions(projectRoot);
+    targetVersions = resolveVersions(projectRoot, lockfile);
   }
 
   const issues: CheckIssue[] = [];
@@ -213,13 +214,14 @@ export async function cmdCheck(
   projectRoot: string,
   format: string = "text",
   modeOverride?: string,
-  docsSourceOverride?: string
+  docsSourceOverride?: string,
+  lockfile: LockfileType = "auto"
 ): Promise<void> {
   if (format !== "text" && format !== "json") {
     throw new AiDocsError(`Unsupported --format value: ${format}`, "INVALID_FORMAT");
   }
 
-  const report = await buildCheckReport(projectRoot, modeOverride, docsSourceOverride);
+  const report = await buildCheckReport(projectRoot, modeOverride, docsSourceOverride, lockfile);
 
   if (format === "json") {
     console.log(renderJsonReport(report));

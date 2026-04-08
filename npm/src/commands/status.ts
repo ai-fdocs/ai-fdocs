@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import chalk from "chalk";
 import { loadConfig, type DocsSource, type SyncMode } from "../config.js";
-import { resolveVersions } from "../resolver.js";
+import { resolveVersions, type LockfileType } from "../resolver.js";
 import { computeConfigHash } from "../config-hash.js";
 import { NpmRegistryClient } from "../registry.js";
 import { AiDocsError } from "../error.js";
@@ -60,7 +60,8 @@ export async function cmdStatus(
   format: string = "text",
   modeOverride?: string,
   docsSourceOverride?: string,
-  verbose: boolean = false
+  verbose: boolean = false,
+  lockfile: LockfileType = "auto"
 ): Promise<void> {
   const config = loadConfig(projectRoot);
   const syncMode = (modeOverride as SyncMode) || config.settings.sync_mode;
@@ -82,7 +83,7 @@ export async function cmdStatus(
       }
     }
   } else {
-    targetVersions = resolveVersions(projectRoot);
+    targetVersions = resolveVersions(projectRoot, lockfile);
   }
 
   const statuses: PackageStatus[] = [];

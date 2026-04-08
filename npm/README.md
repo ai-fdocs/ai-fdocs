@@ -81,10 +81,13 @@ From repository root you can also use helper scripts:
 - `ai-fdocs init [--overwrite]`
 - `ai-fdocs sync [--force] [--report-format text|json]`
   - `--report-format json` prints JSON-only output (no extra log lines).
+  - `--lockfile auto|npm|pnpm|yarn` forces resolver input when multiple lockfiles exist.
 - `ai-fdocs status`
   - `ai-fdocs status --verbose` prints per-package expected/present/missing docs files and inferred source.
   - `ai-fdocs status --format json --verbose` also includes a stable `diagnostics` block (`schema_version = 1`) for CI tooling.
+  - `--lockfile auto|npm|pnpm|yarn` forces resolver input for status checks.
 - `ai-fdocs check [--format text|json]`
+  - `--lockfile auto|npm|pnpm|yarn` forces resolver input for CI checks.
 
 ## Stable CLI contract and SemVer policy
 
