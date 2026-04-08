@@ -3,7 +3,7 @@ import chalk from "chalk";
 import pLimit from "p-limit";
 import { loadConfig } from "../config.js";
 import type { DocsSource } from "../config.js";
-import { resolveVersions } from "../resolver.js";
+import { resolveVersions, type LockfileType } from "../resolver.js";
 import { GitHubClient, fetchDocsFromNpmTarball, type FetchedFile } from "../fetcher.js";
 import { computeConfigHash } from "../config-hash.js";
 import { isCachedV2, savePackageFiles, prune, readCachedInfo, type SavedPackage } from "../storage.js";
@@ -177,7 +177,7 @@ async function tryFetchFromNpm(
 
 export async function cmdSync(
   projectRoot: string,
-  options: { force?: boolean; mode?: string; reportFormat?: string; docsSource?: string }
+  options: { force?: boolean; mode?: string; reportFormat?: string; docsSource?: string; lockfile?: LockfileType }
 ): Promise<void> {
   const force = options.force || false;
   const reportFormat = options.reportFormat || "text";
@@ -211,7 +211,7 @@ export async function cmdSync(
       }
     }
   } else {
-    targetVersions = resolveVersions(projectRoot);
+    targetVersions = resolveVersions(projectRoot, options.lockfile ?? "auto");
   }
 
   if (config.settings.prune) {
