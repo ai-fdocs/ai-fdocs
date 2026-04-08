@@ -43,12 +43,13 @@ program
   .command("status")
   .description("Show current documentation status")
   .option("--format <format>", "Output format: text | json", "text")
+  .option("--verbose", "Include detailed per-package diagnostics", false)
   .option("--mode <mode>", "Sync mode override: lockfile | latest_docs | hybrid")
   .option("--docs-source <source>", "Docs source override: github | npm_tarball")
   .action(async (options) => {
     try {
       const { cmdStatus } = await import("./commands/status.js");
-      await cmdStatus(process.cwd(), options.format, options.mode, options.docsSource);
+      await cmdStatus(process.cwd(), options.format, options.mode, options.docsSource, options.verbose);
     } catch (e) {
       handleError(e);
     }

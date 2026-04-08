@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import chalk from "chalk";
 import { loadConfig, type DocsSource, type SyncMode } from "../config.js";
 import { resolveVersions } from "../resolver.js";
@@ -28,6 +28,10 @@ export interface PackageStatus {
   reason: string;
   configOk: boolean;
   isFallback: boolean;
+  source?: "github" | "npm_tarball" | "unknown";
+  expectedFiles?: string[];
+  presentFiles?: string[];
+  missingFiles?: string[];
 }
 
 export interface StatusReport {
@@ -43,7 +47,8 @@ export async function cmdStatus(
   projectRoot: string,
   format: string = "text",
   modeOverride?: string,
-  docsSourceOverride?: string
+  docsSourceOverride?: string,
+  verbose: boolean = false
 ): Promise<void> {
   const config = loadConfig(projectRoot);
   const syncMode = (modeOverride as SyncMode) || config.settings.sync_mode;
@@ -76,6 +81,12 @@ export async function cmdStatus(
     let reason = "up to date";
     let configOk = true;
     let isFallback = false;
+    const expectedFiles = (pkgConfig.files?.length ? pkgConfig.files : ["README.md", "CHANGELOG.md"]).map((file) =>
+      file.includes("/") ? file.replace(/\//g, "__") : file
+    );
+    let presentFiles: string[] = [];
+    let missingFiles: string[] = [];
+    let source: "github" | "npm_tarball" | "unknown" = "unknown";
 
     if (!targetVersion) {
       status = "Missing";
@@ -83,7 +94,6 @@ export async function cmdStatus(
     } else {
       const pkgDir = join(outputDir, `${name}@${targetVersion}`);
       const metaPath = join(pkgDir, ".aifd-meta.toml");
-
       if (!existsSync(pkgDir)) {
         status = "Missing";
         reason = "Missing artifacts";
@@ -93,9 +103,16 @@ export async function cmdStatus(
       } else {
         try {
           const raw = readFileSync(metaPath, "utf-8");
+          if (raw.includes('git_ref = "npm-tarball"')) {
+            source = "npm_tarball";
+          } else if (raw.match(/git_ref\s*=\s*"([^"]+)"/)?.[1]) {
+            source = "github";
+          }
           isFallback = raw.match(/is_fallback\s*=\s*(true|false)/)?.[1] === "true";
           const storedHash = raw.match(/config_hash\s*=\s*"([^"]+)"/)?.[1];
           configOk = !storedHash || storedHash === computeConfigHash(pkgConfig);
+          presentFiles = readdirSync(pkgDir).filter((file) => !file.startsWith("."));
+          missingFiles = expectedFiles.filter((expected) => !presentFiles.includes(expected));
 
           if (!configOk) {
             status = "Outdated";
@@ -103,6 +120,11 @@ export async function cmdStatus(
           } else if (isFallback) {
             status = "SyncedFallback";
             reason = "Synced (fallback: main/master)";
+          }
+
+          if (status === "Synced" && missingFiles.length > 0) {
+            status = "Incomplete";
+            reason = `Missing expected docs files: ${missingFiles.join(", ")}`;
           }
 
           if (syncMode === "latest_docs") {
@@ -126,13 +148,14 @@ export async function cmdStatus(
       reason,
       configOk,
       isFallback,
+      ...(verbose ? { source, expectedFiles, presentFiles, missingFiles } : {}),
     });
   }
 
   if (format === "json") {
     console.log(JSON.stringify(buildStatusReport(statuses), null, 2));
   } else {
-    printStatusTable(statuses, config.settings.output_dir, syncMode);
+    printStatusTable(statuses, config.settings.output_dir, syncMode, verbose);
   }
 }
 
@@ -159,7 +182,7 @@ function buildStatusReport(statuses: PackageStatus[]): StatusReport {
   };
 }
 
-function printStatusTable(statuses: PackageStatus[], outputDir: string, syncMode: string): void {
+function printStatusTable(statuses: PackageStatus[], outputDir: string, syncMode: string, verbose: boolean): void {
   const nameWidth = 28;
   const verWidth = 15;
 
@@ -195,6 +218,20 @@ function printStatusTable(statuses: PackageStatus[], outputDir: string, syncMode
     console.log(`${s.name.padEnd(nameWidth)} ${(s.lockVersion ?? "N/A").padEnd(verWidth)} ${statusStr}`);
     if (s.status !== "Synced") {
       console.log(chalk.gray(`  ↳ ${s.reason}`));
+    }
+    if (verbose) {
+      if (s.source) {
+        console.log(chalk.gray(`  ↳ source: ${s.source}`));
+      }
+      if (s.expectedFiles && s.expectedFiles.length > 0) {
+        console.log(chalk.gray(`  ↳ expected: ${s.expectedFiles.join(", ")}`));
+      }
+      if (s.presentFiles && s.presentFiles.length > 0) {
+        console.log(chalk.gray(`  ↳ present: ${s.presentFiles.join(", ")}`));
+      }
+      if (s.missingFiles && s.missingFiles.length > 0) {
+        console.log(chalk.yellow(`  ↳ missing: ${s.missingFiles.join(", ")}`));
+      }
     }
   }
 
