@@ -83,6 +83,7 @@ From repository root you can also use helper scripts:
   - `--report-format json` prints JSON-only output (no extra log lines).
 - `ai-fdocs status`
   - `ai-fdocs status --verbose` prints per-package expected/present/missing docs files and inferred source.
+  - `ai-fdocs status --format json --verbose` also includes a stable `diagnostics` block (`schema_version = 1`) for CI tooling.
 - `ai-fdocs check [--format text|json]`
 
 ## Stable CLI contract and SemVer policy

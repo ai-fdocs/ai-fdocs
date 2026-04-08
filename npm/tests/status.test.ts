@@ -62,6 +62,17 @@ describe("status --verbose", () => {
     });
     expect(report.packages[0].expectedFiles).toEqual(["README.md", "docs__guide.md"]);
     expect(report.packages[0].presentFiles).toContain("README.md");
+    expect(report.format_version).toBe(1);
+    expect(typeof report.generated_at).toBe("string");
+    expect(report.diagnostics).toBeDefined();
+    expect(report.diagnostics.schema_version).toBe(1);
+    expect(report.diagnostics.packages[0]).toEqual({
+      name: "lodash",
+      source: "npm_tarball",
+      expected_files: ["README.md", "docs__guide.md"],
+      present_files: ["README.md"],
+      missing_files: ["docs__guide.md"],
+    });
     logSpy.mockRestore();
   });
 });

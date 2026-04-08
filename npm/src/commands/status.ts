@@ -35,12 +35,24 @@ export interface PackageStatus {
 }
 
 export interface StatusReport {
+  format_version: 1;
+  generated_at: string;
   summary: {
     total: number;
     synced: number;
     problems: number;
   };
   packages: PackageStatus[];
+  diagnostics?: {
+    schema_version: 1;
+    packages: Array<{
+      name: string;
+      source: "github" | "npm_tarball" | "unknown";
+      expected_files: string[];
+      present_files: string[];
+      missing_files: string[];
+    }>;
+  };
 }
 
 export async function cmdStatus(
@@ -153,7 +165,7 @@ export async function cmdStatus(
   }
 
   if (format === "json") {
-    console.log(JSON.stringify(buildStatusReport(statuses), null, 2));
+    console.log(JSON.stringify(buildStatusReport(statuses, verbose), null, 2));
   } else {
     printStatusTable(statuses, config.settings.output_dir, syncMode, verbose);
   }
@@ -171,8 +183,10 @@ function isLatestCacheFresh(fetchedAt: string, ttlHours: number): boolean {
   }
 }
 
-function buildStatusReport(statuses: PackageStatus[]): StatusReport {
-  return {
+function buildStatusReport(statuses: PackageStatus[], verbose: boolean): StatusReport {
+  const report: StatusReport = {
+    format_version: 1,
+    generated_at: new Date().toISOString(),
     summary: {
       total: statuses.length,
       synced: statuses.filter((s) => s.status === "Synced" || s.status === "SyncedFallback").length,
@@ -180,6 +194,21 @@ function buildStatusReport(statuses: PackageStatus[]): StatusReport {
     },
     packages: statuses,
   };
+
+  if (verbose) {
+    report.diagnostics = {
+      schema_version: 1,
+      packages: statuses.map((s) => ({
+        name: s.name,
+        source: s.source ?? "unknown",
+        expected_files: s.expectedFiles ?? [],
+        present_files: s.presentFiles ?? [],
+        missing_files: s.missingFiles ?? [],
+      })),
+    };
+  }
+
+  return report;
 }
 
 function printStatusTable(statuses: PackageStatus[], outputDir: string, syncMode: string, verbose: boolean): void {
@@ -235,7 +264,7 @@ function printStatusTable(statuses: PackageStatus[], outputDir: string, syncMode
     }
   }
 
-  const report = buildStatusReport(statuses);
+  const report = buildStatusReport(statuses, false);
   console.log(
     `\nTotal: ${report.summary.total} | Synced: ${report.summary.synced} | Problems: ${report.summary.problems}`
   );
