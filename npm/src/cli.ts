@@ -11,8 +11,6 @@ program.name("ai-fdocs").description("Sync documentation from npm dependencies f
 program
   .command("init")
   .description("Generate ai-fdocs.toml from lockfile via npm registry")
-  .command("init")
-  .description("Generate ai-fdocs.toml from lockfile via npm registry")
   .option("--force", "Overwrite existing config", false)
   .action(async (options) => {
     try {
